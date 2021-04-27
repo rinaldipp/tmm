@@ -24,7 +24,7 @@ style.use('seaborn-colorblind')
 
 class TMM:
     """"
-    Transfer Matrix Model for multi-layered acoustic treatments.
+    Transfer Matrix Method for design and prediction of multilayered acoustic treatments.
     """
 
     def __init__(self, fmin=20, fmax=5000, df=0.5, incidence='diffuse', incidence_angle=[0, 78, 1],
