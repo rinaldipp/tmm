@@ -33,7 +33,7 @@ Toolbox for design and prediction of multilayered acoustic treatments.
     treatment.filter_alpha(figsize=(7, 5), plot='available', show=True, nthOct=1)
 
 ## Contact
-For questions about usage, bugs, licensing and/or contributions contact me at [rinaldipp@gmail.com](rinaldipp@gmail.com).
+For questions about usage, bugs, licensing and/or contributions contact me at rinaldipp@gmail.com .
 
 
 
