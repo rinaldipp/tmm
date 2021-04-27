@@ -24,7 +24,7 @@ style.use('seaborn-colorblind')
 
 class TMM:
     """"
-    Transfer Matrix Models for multilayer acoustic treatments.
+    Transfer Matrix Model for multi-layered acoustic treatments.
     """
 
     def __init__(self, fmin=20, fmax=5000, df=0.5, incidence='diffuse', incidence_angle=[0, 78, 1],
@@ -950,20 +950,21 @@ class TMM:
             ax1.grid('minor')
             plt.show()
 
-        if returnValues:
-            return bands[:, 1], result, available_data
-
         if show:
             pandas.set_option("display.precision", 2)
             freq_bands = []
             absorption = []
-            for i in range(len(result)):
-                freq_bands.append(float(f'{bands[i, 1]}'))
-                absorption.append(float(f'{result[i]:0.2}'))
+            for key, value in available_data.items():
+                freq_bands.append(float(f'{key:0.2}'))
+                absorption.append(float(f'{value:0.2}'))
             data = {'Bands [Hz]': freq_bands, 'Absorption [-]': absorption}
             df = pandas.DataFrame(data=data).set_index('Bands [Hz]').T
             df = df.style.set_caption(f'1/{nthOct} Octave Absorption Data')
+
             return df
+
+        if returnValues:
+            return bands[:, 1], result, available_data
 
     def field_impedance(self, z):
 
