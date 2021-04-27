@@ -1,5 +1,5 @@
-# TMM
-Transfer Matrix Method dor design and prediction of multi-layered acoustic treatments.
+# Transfer Matrix Method (TMM)
+Toolbox for design and prediction of multi-layered acoustic treatments.
 
 ## Dependencies
 - numpy 
@@ -28,7 +28,7 @@ Transfer Matrix Method dor design and prediction of multi-layered acoustic treat
     >>> treatment.filter_alpha(figsize=(7, 5), plot='available', show=True, nthOct=1)
 
 ## Contact
-For questions about usage, bug reports, licensing and/or contributions contact me at [rinaldipp@gmail.com](rinaldipp@gmail.com).
+For questions about usage, bugs, licensing and/or contributions contact me at [rinaldipp@gmail.com](rinaldipp@gmail.com).
 
 
 
