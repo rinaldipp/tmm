@@ -23,9 +23,9 @@ Transfer Matrix Method dor design and prediction of multi-layered acoustic treat
     >>> treatment.porous_layer(model='ac', t=50, sigma=27)
     >>> treatment.air_layer(t=50)
     >>> treatment.compute(rigid_backing=True, show_layers=True)
-    >>> treatment.plot(figsize=(7, 4), plots=['alpha'], saveFig=True, filename='example_treatment')
+    >>> treatment.plot(figsize=(7, 5), plots=['alpha'], saveFig=True, filename='example_treatment')
     >>> treatment.save2sheet(timestamp=False, filename='example_treatment', nthOct=1)
-    >>> treatment.filter_alpha(figsize=(7, 4), plot='available', show=True, nthOct=1)
+    >>> treatment.filter_alpha(figsize=(7, 5), plot='available', show=True, nthOct=1)
 
 ## Contact
 For questions about usage, bug reports, licensing and/or contributions contact me at [rinaldipp@gmail.com](rinaldipp@gmail.com).

@@ -183,9 +183,9 @@ class TMM:
         if saveFig:
             timestr = time.strftime("%Y%m%d-%H%M_")
             if self.project_folder is None:
-                full_path = outputs + filename + ext
+                full_path = outputs + '\\' + filename + ext
                 if timestamp is True:
-                    full_path = outputs + timestr + filename + ext
+                    full_path = outputs + '\\' + timestr + filename + ext
             else:
                 folderCheck = os.path.exists(self.project_folder + '\\Treatments')
                 if folderCheck is False:
@@ -194,8 +194,8 @@ class TMM:
                 if timestamp is True:
                     full_path = self.project_folder + '\\Treatments\\' + timestr + filename + ext
 
-                plt.savefig(full_path, dpi=100)
-                print('Image saved to ', full_path)
+            plt.savefig(full_path, dpi=100)
+            print('Image saved to ', full_path)
         plt.show()
 
     def delany_bazley(self, sigma, warnings=1):
@@ -733,9 +733,9 @@ class TMM:
 
         timestr = time.strftime("%Y%m%d-%H%M_")
         if self.project_folder is None:
-            full_path = outputs + filename + ext
+            full_path = outputs + '\\' + filename + ext
             if timestamp is True:
-                full_path = outputs + timestr + filename + ext
+                full_path = outputs + '\\' + timestr + filename + ext
         else:
             folderCheck = os.path.exists(self.project_folder + '\\Treatments')
             if folderCheck is False:
