@@ -1,5 +1,33 @@
+# VS Code files
+.vscode/
+
+# Data files
+*.pkl
+*.pickle
+*.mat
+*.pytta
+*.hdf5
+*.wav
+*.txt
+*.xlsx
+*.msh
+*.zip
+notebooks/*
+versions/*
+
+# All the python stuff
+*.pyc
+*.cpython-*.pyc
+
+# DS
+*.DS_Store
+
+# System files
+*.swp
+
 # Byte-compiled / optimized / DLL files
-__pycache__/
+__pycache__/*
+pytta/__pycache__/*
 *.py[cod]
 *$py.class
 
@@ -20,7 +48,6 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -28,7 +55,7 @@ share/python-wheels/
 MANIFEST
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
+#  Usually these files are written by git python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
@@ -47,7 +74,6 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
-*.py,cover
 .hypothesis/
 .pytest_cache/
 
@@ -59,7 +85,6 @@ coverage.xml
 *.log
 local_settings.py
 db.sqlite3
-db.sqlite3-journal
 
 # Flask stuff:
 instance/
@@ -69,13 +94,18 @@ instance/
 .scrapy
 
 # Sphinx documentation
-docs/_build/
+docs/_build/*
+docs_fonte/*
+docs/build/*
 
 # PyBuilder
 target/
 
+# PyCharm
+.idea/*
+
 # Jupyter Notebook
-.ipynb_checkpoints
+.ipynb_checkpoints/*
 
 # IPython
 profile_default/
@@ -84,19 +114,8 @@ ipython_config.py
 # pyenv
 .python-version
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow
-__pypackages__/
-
-# Celery stuff
+# celery beat schedule file
 celerybeat-schedule
-celerybeat.pid
 
 # SageMath parsed files
 *.sage.py
@@ -104,11 +123,11 @@ celerybeat.pid
 # Environments
 .env
 .venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+env/*
+venv/*
+ENV/*
+env.bak/*
+venv.bak/*
 
 # Spyder project settings
 .spyderproject
@@ -127,3 +146,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# DS
+.DS_Store
