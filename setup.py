@@ -16,7 +16,7 @@ settings = {
     'author_email': 'rinaldipp@gmail.com',
     'license': 'MIT',
     'install_requires': ['numpy', 'scipy', 'matplotlib',
-        'pandas', 'mpmath', 'xlsxwriter', 'git+https://github.com/pyttamaster/pytta@development'],
+        'pandas', 'mpmath', 'xlsxwriter'],
     'classifiers': [
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
