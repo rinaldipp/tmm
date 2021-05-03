@@ -954,14 +954,20 @@ class TMM:
             pandas.set_option("display.precision", 2)
             freq_bands = []
             absorption = []
+            absorption_percentual = []
             for key, value in available_data.items():
                 freq_bands.append(float(f'{key:0.2}'))
                 absorption.append(float(f'{value:0.2}'))
-            data = {'Bands [Hz]': freq_bands, 'Absorption [-]': absorption}
+                absorption_percentual.append(float(f'{value * 100:0.2}'))
+            data = {'Bands [Hz]': freq_bands, 'Absorption [-]': absorption, 'Absorption [%]': absorption_percentual}
             df = pandas.DataFrame(data=data).set_index('Bands [Hz]').T
             df = df.style.set_caption(f'1/{nthOct} Octave Absorption Data')
 
-            return df
+            try:
+                from IPython.display import display
+                display(df)
+            except:
+                print('IPython.diplay unavailable.')
 
         if returnValues:
             return bands[:, 1], result, available_data
@@ -1032,3 +1038,26 @@ def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return array[idx], idx
+
+
+if __name__ == '__main__':
+
+    from tmm import TMM
+
+    # Define the frequency range, resolution and sound incidence
+    treatment = TMM(fmin=10, fmax=5000, df=1, incidence='normal')
+
+    # Define the layers - from top to bottom
+    treatment.perforated_panel_layer(t=19, d=8, s=24)
+    treatment.porous_layer(model='ac', t=50, sigma=27)
+    treatment.air_layer(t=50)
+
+    # Compute, plot and export data
+    treatment.compute(rigid_backing=True, show_layers=True)
+    treatment.plot(figsize=(7, 5), plots=['alpha'], saveFig=True, filename='example_treatment', timestamp=False)
+    treatment.save2sheet(timestamp=False, filename='example_treatment', nthOct=1)
+    bands, filtered_alpha, available_data = treatment.filter_alpha(figsize=(7, 5),
+                                                                   plot='available',
+                                                                   show=True,
+                                                                   nthOct=1,
+                                                                   returnValues=True)
