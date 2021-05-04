@@ -1,5 +1,5 @@
 # Transfer Matrix Method (TMM)
-Toolbox for design and prediction of multilayered acoustic treatments.
+Toolbox for design and prediction of multilayered acoustic treatments. Also contains a material model based on the GRAS database.
 
 ## Dependencies
 - numpy 
