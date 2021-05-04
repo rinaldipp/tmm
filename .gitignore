@@ -12,6 +12,7 @@
 *.xlsx
 *.msh
 *.zip
+*.png
 notebooks/*
 versions/*
 

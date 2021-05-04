@@ -92,111 +92,63 @@ class TMM:
     def y_norm(self):
         return 1 / self.z_norm
 
-    def plot(self, figsize=(15, 5), plots=['alpha', 'z', 'y'], saveFig=False, filename='TMM', timestamp=True,
-             ext='.png', max_mode='all'):
+    def reflection_and_absorption_coefficient(self, zs):
         """
-        Displays device information.
+        Calculate reflection coefficient (R) and absorption coefficient (alpha)
+        for a given surface impedance zs.
+        Acoustic Absorbers and Diffusers by Trevor Cox and Peter D'Antonio
+        Eqs. from Chapter 1
         """
 
-        fig = plt.figure(figsize=figsize)
-        gs = gridspec.GridSpec(1, len(plots))
+        R = (zs - self.z0) / (zs + self.z0)  # Reflection coefficient
+        alpha = 1 - np.abs(R) ** 2  # Absorption coefficient
 
-        i = 0
-        if 'z' in plots or 'Z' in plots:
-            ax_z = plt.subplot(gs[0, i])
-            ax_z.set_title(r'Impedance ($Z$)')
-            ax_z.set_xlabel('Frequency [Hz]')
-            ax_z.set_ylabel('Normalized Surface Impedance [Z/Z0]')
-            ax_z.semilogx(self.freq, np.real(self.z_norm), linewidth=2, label='Real')
-            ax_z.semilogx(self.freq, np.imag(self.z_norm), linewidth=2, label='Imag')
-            ax_z.set_xlim([(np.min(self.freq)), (np.max(self.freq))])
-            ax_z.axhline(y=0, color='k', linewidth=0.5)
-            ax_z.axhline(y=1, linestyle='--', color='gray')
-            ax_z.legend(loc='best')
-            ax_z.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax_z.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax_z.tick_params(which='minor', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
-            ax_z.tick_params(which='major', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
-            ax_z.minorticks_on()  # Set major and minor ticks to same length
-            ax_z.grid('minor')
-            i += 1
+        return R, alpha
 
-        if 'y' in plots or 'Y' in plots:
-            ax_y = plt.subplot(gs[0, i])
-            ax_y.set_title(r'Admittance ($Y$)')
-            ax_y.set_xlabel('Frequency [Hz]')
-            ax_y.set_ylabel('Normalized Surface Admittance [Z0/Z]')
-            ax_y.semilogx(self.freq, np.real(self.y_norm), linewidth=2, label='Real')
-            ax_y.semilogx(self.freq, np.imag(self.y_norm), linewidth=2, label='Imag')
-            ax_y.set_xlim([(np.min(self.freq)), (np.max(self.freq))])
-            ax_y.axhline(y=0, color='k', linewidth=0.5)
-            ax_y.axhline(y=1, linestyle='--', color='gray')
-            ax_y.legend(loc='best')
-            ax_y.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax_y.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax_y.tick_params(which='minor', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
-            ax_y.tick_params(which='major', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
-            ax_y.minorticks_on()  # Set major and minor ticks to same length
-            ax_y.grid('minor')
-            i += 1
+    def air_properties(self, t0=20, p0=101320, rh=30):
+        """
+        Computes properties of humid air.
 
-        if 'alpha' in plots or 'abs' in plots:
-            ax_a = plt.subplot(gs[0, i])
-            ax_a.set_title(r'Absorption Coefficient ($\alpha$)')
-            ax_a.set_xlabel('Frequency [Hz]')
-            ax_a.set_ylabel('Absorption Coefficient [-]')
-            if self.incidence == 'diffuse':
-                ax_a.semilogx(self.freq, self.alpha, linewidth=2,
-                              label=f'Diffuse Incidence ' +
-                                    f'({min(self.incidence_angle):0.0f}° - {max(self.incidence_angle):0.0f}°)')
-                ax_a.semilogx(self.freq, self.alpha_normal, linewidth=2, label='Normal Incidence', linestyle=':')
-            else:
-                ax_a.semilogx(self.freq, self.alpha, linewidth=2)
-            if max_mode == 'all':
-                abs_value, idx = find_nearest(self.alpha, max(self.alpha))
-            elif max_mode is not None:
-                max_mode_val, idx_max_mode = find_nearest(self.freq, max_mode)
-                abs_value, idx = find_nearest(self.alpha[0:idx_max_mode], max(self.alpha[0:idx_max_mode]))
-            if max_mode is not None:
-                ax_a.axvline(x=self.freq[idx], label=f'Resonance at {self.freq[idx]} Hz', linestyle='--', color='green')
-            ax_a.set_xlim([(np.min(self.freq)), (np.max(self.freq))])
-            ax_a.set_ylim([-0.1, 1.1])
-            ax_a.legend(loc='best')
-            ax_a.axhline(y=0, color='k', linewidth=0.5)
-            ax_a.axhline(y=1, linestyle='--', color='gray')
-            ax_a.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax_a.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax_a.tick_params(which='minor', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
-            ax_a.tick_params(which='major', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
-            ax_a.minorticks_on()  # Set major and minor ticks to same length
-            ax_a.grid('minor')
-            i += 1
+        Input parameters:
+          - t0: temperature in Celsius [C]
+          - p0: atmospheric pressure in Pascal [Pa]
+          - rh: relative humidity in percentage [%]
 
-        gs.tight_layout(fig, pad=4, w_pad=1, h_pad=1)
+        Output parameters:
+          - rho0: volume density [kg/m³]
+          - c0: sound speed [m/s]
+          - vis: absolute (or dynamic) viscosity [Ns/m²]
+          - gam: specific heat ratio [-]
+          - pn: Prandtl number [-]
+          - Cp: Constant Pressure Specific Heat [J/kg*K]
+        """
 
-        if saveFig:
-            timestr = time.strftime("%Y%m%d-%H%M_")
-            if self.project_folder is None:
-                full_path = outputs + '\\' + filename + ext
-                if timestamp is True:
-                    full_path = outputs + '\\' + timestr + filename + ext
-            else:
-                folderCheck = os.path.exists(self.project_folder + '\\Treatments')
-                if folderCheck is False:
-                    os.mkdir(self.project_folder + '\\Treatments')
-                full_path = self.project_folder + '\\Treatments\\' + filename + ext
-                if timestamp is True:
-                    full_path = self.project_folder + '\\Treatments\\' + timestr + filename + ext
+        kappla = 0.026  # Air thermal conductivity [W/m*k]
+        t = t0 + 273.16  # Temperature in Kelvin
+        R = 287.031  # Gas constant for air [J/K/kg]
+        Rvp = 461.521  # Gas constant for water vapor [J/K/kg]
+        Pvp = 0.0658 * t ** 3 - 53.7558 * t ** 2 + 14703.8127 * t - 1345485.0465  # Pierce(Acoustics, 1991) page 555
+        vis = 7.72488e-8 * t - 5.95238e-11 * t ** 2 + 2.71368e-14 * t ** 3
+        Cp = 4168.8 * (0.249679 - 7.55179e-5 * t + 1.69194e-7 * t ** 2 - 6.46128e-11 * t ** 3)
+        Cv = Cp - R  # Constant Volume Specific Heat [J/kg/K] for 260 K < T < 600 K
+        pn = vis * Cp / kappla  # Prandtl number (fewly varies at typical air conditions (0°C=0.715; 60°C=0.709)
+        gam = Cp / Cv  # Specific heat ratio [-]
+        rho0 = p0 / (R * t) - (1 / R - 1 / Rvp) * rh / 100 * Pvp / t  # Density of air [kg/m³]
+        c0 = (gam * p0 / rho0) ** 0.5
 
-            plt.savefig(full_path, dpi=100)
-            print('Image saved to ', full_path)
-        plt.show()
+        air_properties = {'temperature_in_celsius': t0,
+                          'relative_humidity': rh,
+                          'atmospheric_pressure': p0,
+                          'prandtl_number': pn,
+                          'specific_heat_ratio': gam,
+                          'air_density': rho0,
+                          'speed_of_sound': c0,
+                          'air_viscosity': vis,
+                          'air_thermal_conductivity': kappla,
+                          'constant_pressure_specific_heat': Cp}
+
+        # return rho0, c0, vis, gam, pn, Cp, kappla
+        return air_properties
 
     def delany_bazley(self, sigma, warnings=1):
         """
@@ -340,19 +292,6 @@ class TMM:
                 print(f'X = {max(self.freq)} too large')
 
         return kc, zc
-
-    def reflection_and_absorption_coefficient(self, zs):
-        """
-        Calculate reflection coefficient (R) and absorption coefficient (alpha)
-        for a given surface impedance zs.
-        Acoustic Absorbers and Diffusers by Trevor Cox and Peter D'Antonio
-        Eqs. from Chapter 1
-        """
-
-        R = (zs - self.z0) / (zs + self.z0)  # Reflection coefficient
-        alpha = 1 - np.abs(R) ** 2  # Absorption coefficient
-
-        return R, alpha
 
     def porous_layer(self, sigma=27, t=5, model='ac', layer=None,
                      model_params={'warnings': 0, 'fibre_type': 2}):
@@ -607,50 +546,6 @@ class TMM:
                               'matrix': Ts,
                               }
 
-    def air_properties(self, t0=20, p0=101320, rh=30):
-        """
-        Computes properties of humid air.
-
-        Input parameters:
-          - t0: temperature in Celsius [C]
-          - p0: atmospheric pressure in Pascal [Pa]
-          - rh: relative humidity in percentage [%]
-
-        Output parameters:
-          - rho0: volume density [kg/m³]
-          - c0: sound speed [m/s]
-          - vis: absolute (or dynamic) viscosity [Ns/m²]
-          - gam: specific heat ratio [-]
-          - pn: Prandtl number [-]
-          - Cp: Constant Pressure Specific Heat [J/kg*K]
-        """
-
-        kappla = 0.026  # Air thermal conductivity [W/m*k]
-        t = t0 + 273.16  # Temperature in Kelvin
-        R = 287.031  # Gas constant for air [J/K/kg]
-        Rvp = 461.521  # Gas constant for water vapor [J/K/kg]
-        Pvp = 0.0658 * t ** 3 - 53.7558 * t ** 2 + 14703.8127 * t - 1345485.0465  # Pierce(Acoustics, 1991) page 555
-        vis = 7.72488e-8 * t - 5.95238e-11 * t ** 2 + 2.71368e-14 * t ** 3
-        Cp = 4168.8 * (0.249679 - 7.55179e-5 * t + 1.69194e-7 * t ** 2 - 6.46128e-11 * t ** 3)
-        Cv = Cp - R  # Constant Volume Specific Heat [J/kg/K] for 260 K < T < 600 K
-        pn = vis * Cp / kappla  # Prandtl number (fewly varies at typical air conditions (0°C=0.715; 60°C=0.709)
-        gam = Cp / Cv  # Specific heat ratio [-]
-        rho0 = p0 / (R * t) - (1 / R - 1 / Rvp) * rh / 100 * Pvp / t  # Density of air [kg/m³]
-        c0 = (gam * p0 / rho0) ** 0.5
-
-        air_properties = {'temperature_in_celsius': t0,
-                          'relative_humidity': rh,
-                          'atmospheric_pressure': p0,
-                          'prandtl_number': pn,
-                          'specific_heat_ratio': gam,
-                          'air_density': rho0,
-                          'speed_of_sound': c0,
-                          'air_viscosity': vis,
-                          'air_thermal_conductivity': kappla,
-                          'constant_pressure_specific_heat': Cp}
-
-        # return rho0, c0, vis, gam, pn, Cp, kappla
-        return air_properties
 
     def viscothermal_circular(self, d, open_area):
         """
@@ -699,6 +594,62 @@ class TMM:
         zc = np.sqrt(rhoef * kef)
 
         return kc, zc
+
+    def field_impedance(self, z):
+
+        A = 1 / z
+
+        self.z_normal = z[:, 0]
+
+        Af1 = A * np.sin(np.deg2rad(self.incidence_angle))
+        Af2 = np.sin(np.deg2rad(self.incidence_angle))
+        Af_div = Af1 / Af2
+
+        Af = integrate.simps(Af_div, np.deg2rad(self.incidence_angle))
+
+        return 1 / Af
+
+    def compute(self, rigid_backing=True, conj=False, show_layers=True):
+        """
+        Calculates the final transfer matrix for the existing layers.
+
+        Input:
+         - rigid_backing: bool, if True adds a rigid layer to the end of the device
+        """
+
+        self.matrix = dict(collections.OrderedDict(sorted(self.matrix.items())))
+
+        Tg = self.matrix[0]['matrix']
+        for matrix in range(len(self.matrix) - 1):
+            Tg = np.einsum('ijna,jkna->ikna', Tg, self.matrix[matrix + 1]['matrix'])
+
+        Ag = Tg[0, 0]
+        Bg = Tg[0, 1]
+        Cg = Tg[1, 0]
+        Dg = Tg[1, 1]
+
+        if rigid_backing:
+            zrad = 0
+
+        else:
+            # Radiation impedance for an unflanged circular tube in an infinite baffle
+            zrad = self.z0 * (0.25 * (self.w0 * self.srad) ** 2 + 1j * 0.61 * self.w0 * self.srad)
+            zrad = zrad.reshape((len(zrad), 1))
+        zc = self.s0 * (Ag + (Bg * zrad / self.srad)) / (Cg + (Dg * zrad / self.srad))
+
+        if self.incidence == 'diffuse':
+            zc = self.field_impedance(zc)
+
+        if not conj:
+            self.z = zc
+        else:
+            self.z = np.conj(zc)
+
+        self.matrix[len(self.matrix)] = {'rigid_backing': rigid_backing,
+                                         'impedance_conjugate': conj}
+
+        if show_layers:
+            self.show_layers()
 
     def show_layers(self, conversion=[0.0393701, '[inches]']):
         print('Device properties:')
@@ -871,6 +822,110 @@ class TMM:
 
         print(f'Sheet saved to ', full_path)
 
+    def plot(self, figsize=(15, 5), plots=['alpha', 'z', 'y'], saveFig=False, filename='TMM', timestamp=True,
+             ext='.png', max_mode='all'):
+        """
+        Displays device information.
+        """
+
+        fig = plt.figure(figsize=figsize)
+        gs = gridspec.GridSpec(1, len(plots))
+
+        i = 0
+        if 'z' in plots or 'Z' in plots:
+            ax_z = plt.subplot(gs[0, i])
+            ax_z.set_title(r'Impedance ($Z$)')
+            ax_z.set_xlabel('Frequency [Hz]')
+            ax_z.set_ylabel('Normalized Surface Impedance [Z/Z0]')
+            ax_z.semilogx(self.freq, np.real(self.z_norm), linewidth=2, label='Real')
+            ax_z.semilogx(self.freq, np.imag(self.z_norm), linewidth=2, label='Imag')
+            ax_z.set_xlim([(np.min(self.freq)), (np.max(self.freq))])
+            ax_z.axhline(y=0, color='k', linewidth=0.5)
+            ax_z.axhline(y=1, linestyle='--', color='gray')
+            ax_z.legend(loc='best')
+            ax_z.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
+            ax_z.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
+            ax_z.tick_params(which='minor', length=5, rotation=-90,
+                             axis='x')  # Set major and minor ticks to same length
+            ax_z.tick_params(which='major', length=5, rotation=-90,
+                             axis='x')  # Set major and minor ticks to same length
+            ax_z.minorticks_on()  # Set major and minor ticks to same length
+            ax_z.grid('minor')
+            i += 1
+
+        if 'y' in plots or 'Y' in plots:
+            ax_y = plt.subplot(gs[0, i])
+            ax_y.set_title(r'Admittance ($Y$)')
+            ax_y.set_xlabel('Frequency [Hz]')
+            ax_y.set_ylabel('Normalized Surface Admittance [Z0/Z]')
+            ax_y.semilogx(self.freq, np.real(self.y_norm), linewidth=2, label='Real')
+            ax_y.semilogx(self.freq, np.imag(self.y_norm), linewidth=2, label='Imag')
+            ax_y.set_xlim([(np.min(self.freq)), (np.max(self.freq))])
+            ax_y.legend(loc='best')
+            ax_y.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
+            ax_y.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
+            ax_y.tick_params(which='minor', length=5, rotation=-90,
+                             axis='x')  # Set major and minor ticks to same length
+            ax_y.tick_params(which='major', length=5, rotation=-90,
+                             axis='x')  # Set major and minor ticks to same length
+            ax_y.minorticks_on()  # Set major and minor ticks to same length
+            ax_y.grid('minor')
+            i += 1
+
+        if 'alpha' in plots or 'abs' in plots:
+            ax_a = plt.subplot(gs[0, i])
+            ax_a.set_title(r'Absorption Coefficient ($\alpha$)')
+            ax_a.set_xlabel('Frequency [Hz]')
+            ax_a.set_ylabel('Absorption Coefficient [-]')
+            if self.incidence == 'diffuse':
+                ax_a.semilogx(self.freq, self.alpha, linewidth=2,
+                              label=f'Diffuse Incidence ' +
+                                    f'({min(self.incidence_angle):0.0f}° - {max(self.incidence_angle):0.0f}°)')
+                ax_a.semilogx(self.freq, self.alpha_normal, linewidth=2, label='Normal Incidence', linestyle=':')
+            else:
+                ax_a.semilogx(self.freq, self.alpha, linewidth=2)
+            if max_mode == 'all':
+                abs_value, idx = find_nearest(self.alpha, max(self.alpha))
+            elif max_mode is not None:
+                max_mode_val, idx_max_mode = find_nearest(self.freq, max_mode)
+                abs_value, idx = find_nearest(self.alpha[0:idx_max_mode], max(self.alpha[0:idx_max_mode]))
+            if max_mode is not None:
+                ax_a.axvline(x=self.freq[idx], label=f'Resonance at {self.freq[idx]} Hz', linestyle='--', color='green')
+            ax_a.set_xlim([(np.min(self.freq)), (np.max(self.freq))])
+            ax_a.set_ylim([-0.1, 1.1])
+            ax_a.legend(loc='best')
+            ax_a.axhline(y=0, color='k', linewidth=0.5)
+            ax_a.axhline(y=1, linestyle='--', color='gray')
+            ax_a.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
+            ax_a.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
+            ax_a.tick_params(which='minor', length=5, rotation=-90,
+                             axis='x')  # Set major and minor ticks to same length
+            ax_a.tick_params(which='major', length=5, rotation=-90,
+                             axis='x')  # Set major and minor ticks to same length
+            ax_a.minorticks_on()  # Set major and minor ticks to same length
+            ax_a.grid('minor')
+            i += 1
+
+        gs.tight_layout(fig, pad=4, w_pad=1, h_pad=1)
+
+        if saveFig:
+            timestr = time.strftime("%Y%m%d-%H%M_")
+            if self.project_folder is None:
+                full_path = outputs + '\\' + filename + ext
+                if timestamp is True:
+                    full_path = outputs + '\\' + timestr + filename + ext
+            else:
+                folderCheck = os.path.exists(self.project_folder + '\\Treatments')
+                if folderCheck is False:
+                    os.mkdir(self.project_folder + '\\Treatments')
+                full_path = self.project_folder + '\\Treatments\\' + filename + ext
+                if timestamp is True:
+                    full_path = self.project_folder + '\\Treatments\\' + timestr + filename + ext
+
+            plt.savefig(full_path, dpi=100)
+            print('Image saved to ', full_path)
+        plt.show()
+
     def filter_alpha(self, nthOct=1, plot='available', warning=False, returnValues=False, show=False, figsize=(15, 5)):
 
         bands = pytta.utils.fractional_octave_frequencies(nthOct=nthOct)
@@ -972,62 +1027,6 @@ class TMM:
         if returnValues:
             return bands[:, 1], result, available_data
 
-    def field_impedance(self, z):
-
-        A = 1 / z
-
-        self.z_normal = z[:, 0]
-
-        Af1 = A * np.sin(np.deg2rad(self.incidence_angle))
-        Af2 = np.sin(np.deg2rad(self.incidence_angle))
-        Af_div = Af1 / Af2
-
-        Af = integrate.simps(Af_div, np.deg2rad(self.incidence_angle))
-
-        return 1 / Af
-
-    def compute(self, rigid_backing=True, conj=False, show_layers=True):
-        """
-        Calculates the final transfer matrix for the existing layers.
-
-        Input:
-         - rigid_backing: bool, if True adds a rigid layer to the end of the device
-        """
-
-        self.matrix = dict(collections.OrderedDict(sorted(self.matrix.items())))
-
-        Tg = self.matrix[0]['matrix']
-        for matrix in range(len(self.matrix) - 1):
-            Tg = np.einsum('ijna,jkna->ikna', Tg, self.matrix[matrix + 1]['matrix'])
-
-        Ag = Tg[0, 0]
-        Bg = Tg[0, 1]
-        Cg = Tg[1, 0]
-        Dg = Tg[1, 1]
-
-        if rigid_backing:
-            zrad = 0
-
-        else:
-            # Radiation impedance for an unflanged circular tube in an infinite baffle
-            zrad = self.z0 * (0.25 * (self.w0 * self.srad) ** 2 + 1j * 0.61 * self.w0 * self.srad)
-            zrad = zrad.reshape((len(zrad), 1))
-        zc = self.s0 * (Ag + (Bg * zrad / self.srad)) / (Cg + (Dg * zrad / self.srad))
-
-        if self.incidence == 'diffuse':
-            zc = self.field_impedance(zc)
-
-        if not conj:
-            self.z = zc
-        else:
-            self.z = np.conj(zc)
-
-        self.matrix[len(self.matrix)] = {'rigid_backing': rigid_backing,
-                                         'impedance_conjugate': conj}
-
-        if show_layers:
-            self.show_layers()
-
 
 def find_nearest(array, value):
     """
@@ -1045,7 +1044,7 @@ if __name__ == '__main__':
     from tmm import TMM
 
     # Define the frequency range, resolution and sound incidence
-    treatment = TMM(fmin=10, fmax=5000, df=1, incidence='normal')
+    treatment = TMM(fmin=20, fmax=5000, df=1, incidence='normal')
 
     # Define the layers - from top to bottom
     treatment.perforated_panel_layer(t=19, d=8, s=24)
