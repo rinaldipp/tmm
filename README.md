@@ -16,7 +16,7 @@ Toolbox for design and prediction of multilayered acoustic treatments. Also cont
     pip install git+https://github.com/rinaldipp/tmm.git
 
 ## Example - TMM
-    from tmm import TMM
+    from tmm.tmm import TMM
 
     # Define the frequency range, resolution and sound incidence
     treatment = TMM(fmin=20, fmax=5000, df=1, incidence='normal')
@@ -37,7 +37,7 @@ Toolbox for design and prediction of multilayered acoustic treatments. Also cont
                                                                    returnValues=True)
 
 ## Example - MaterialModel
-    from material_model import MaterialModel
+    from tmm.material_model import MaterialModel
 
     # Define the frequency range, resolution and project parameters
     mm = MaterialModel(fmin=20, fmax=5000, df=1, c0=343, rho0=1.21)
