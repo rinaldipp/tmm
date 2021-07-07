@@ -9,7 +9,10 @@ from scipy.interpolate import CubicSpline
 from scipy.signal import butter, freqz, savgol_filter
 import time
 import pytta
-from database.path import path as database_path
+try:
+    from tmm.database.path import path as database_path
+except:
+    from database.path import path as database_path
 
 outputs = os.getcwd()
 style.use('seaborn-colorblind')
