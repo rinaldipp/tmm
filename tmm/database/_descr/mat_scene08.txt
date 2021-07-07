@@ -1,0 +1,36 @@
+## Material/Surface information file "mat_scene08"
+
+Author: 					Lukas Aspöck / las@akustik.rwth-aachen.de
+Date:						2016/07/11	
+
+Notes:						This file contains information about the boundary conditions of the materials (4):
+							"mat_scene08_absorber", "mat_scene08_concrete", "mat_scene08_paintedConcrete", "mat_scene08_tablesEquipment"
+														
+							All relevant values are given in separate files in the csv-format							
+
+
+## Material information:
+
+Scenes:						08
+Origin of data: 			Estimated data for absorption and scattering coefficients (based on database values and in situ measurements)
+Angle of incidence:			random incidence
+Frequency Range:			20 Hz - 20 kHz (31 third octave values, see line 1 in csv file)	
+
+Absorption coefficients:	[x] (see line 2 in csv file)
+Scattering coefficients: 	[x] (see line 3 in csv file) 
+Impedance values:			[ ]
+
+Data files:					/_csv/mat_scene08_absorber.csv
+							/_csv/mat_scene08_concrete.csv
+							/_csv/mat_scene08_paintedConcrete.csv		(Note: in Phase1, this material was accidently called mat_scene08_plaster)
+							/_csv/mat_scene08_tablesEquipment.csv
+							
+Image files:
+							/_img/mat_scene08_absorber_1.JPG
+							/_img/mat_scene08_concrete_1.JPG
+							/_img/mat_scene08_concrete_2.JPG
+							/_img/mat_scene08_paintedConcrete.JPG														
+							/_img/mat_scene08_tablesEquipment_1.JPG														
+							/_img/mat_scene08_tablesEquipment_2.JPG														
+							/_img/mat_scene08_tablesEquipment_3.JPG														
+							/_img/mat_scene08_tablesEquipment_4.JPG																					

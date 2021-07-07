@@ -1,0 +1,35 @@
+## Material/Surface information file "mat_MDF12mm_structured": MDF-Diffusor (12 cm)
+
+Author: 					Lukas Aspöck / las@akustik.rwth-aachen.de
+Date:						2016/06/28	
+
+Notes:						This file contains information about the boundary conditions of the material "mat_MDF12mm_structured"
+							All relevant values are given in separate files in the csv-format
+							
+							Medium-density fibreboard with a thickness of 12mm. This material was used in for the construction of the diffusor in scene01.
+							Geometrical models should use this material for the calculation of scene01. Scattering coefficients are not provided, the
+							participant is asked to define scattering coefficients according to the dimensions of the material. A more detailed description
+							of the diffusor can be found in the scene description of scene01.
+
+
+## Material information:
+
+Scenes:						01
+Origin of data: 			Measured (semianechoic chamber) between ~300 Hz - 20 kHz, estimated/extrapolated for lower frequencies 
+Angle of incidence:			30°, 45°, 60°, (45° in + 32° out) 		// [ 0°  = normal incidence; 90° = grazing incidence]
+Frequency Range:			20 Hz - 20 kHz (31 third octave values, see line 1 in csv file)	
+
+Absorption coefficients:	[x] (see line 2 in csv file)
+Scattering coefficients: 	[ ] (calculated/defined by participant!)
+Impedance values:			[ ]
+
+Data files:					/_csv/mat_MDF12mm_structured_30deg.csv
+							/_csv/mat_MDF12mm_structured_45deg.csv
+							/_csv/mat_MDF12mm_structured_60deg.csv
+							/_csv/mat_MDF12mm_structured_45degIn_32degOut.csv	// for binaural situation (LS02->MP04)
+							
+
+
+## Additional information:
+
+processing of measurements:	Edge effects on absorption are neglected / corresponding frequency range is interpolated	

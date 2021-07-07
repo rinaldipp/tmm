@@ -1,0 +1,34 @@
+## Material/Surface information file "mat_RockFonSonarG"
+
+Author: 					Lukas Aspöck / las@akustik.rwth-aachen.de
+Date:						2016/07/06	
+
+Notes:						This file contains information about the boundary conditions of the material "mat_RockFonSonarG"
+							All relevant values are given in separate files in the csv-format
+							
+							The data which is valid for an infinte surface of absorber sheets (w=600 mm, l=600mm, h=20mm).
+							Edge effects (due to limited distances in scene01 and scene02) have to be modelled or neglected by participants
+							Material was provided by the company RockFon (ROCKWOOL)
+							Product details can be found here: http://rwiumbraco-rfn.inforce.dk/media/3231070/de-rockfon-sonar.pdf
+
+## Material information:
+
+Scenes:						01, 02
+Origin of data: 			Measured (semianechoic chamber) between 60 Hz - 20 kHz, estimated/extrapolated for lower frequencies 
+Angle of incidence:			30°, 45°, 60° // [ 0°  = normal incidence, 90° = grazing incidence]
+Frequency Range:			20 Hz - 20 kHz (31 third octave values, see line 1 in csv file)	
+
+Absorption coefficients:	[x] (see line 2 in csv file)
+Scattering coefficients: 	[x] (see line 3 in csv file) 
+Impedance values:			[ ]
+
+Data files:					/_csv/mat_RockFonSonarG_00deg.csv
+							/_csv/mat_RockFonSonarG_30deg.csv
+							/_csv/mat_RockFonSonarG_45deg.csv
+							/_csv/mat_RockFonSonarG_60deg.csv
+							/_csv/mat_RockFonSonarG_45degIn_32degOut.csv	// for binaural situation (LS02->MP04)
+							
+
+## Additional information:
+
+processing of measurements:	Edge effects on absorption are neglected / corresponding frequency range is interpolated	

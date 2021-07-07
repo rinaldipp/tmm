@@ -30,11 +30,11 @@ Toolbox for design and prediction of multilayered acoustic treatments. Also cont
     treatment.compute(rigid_backing=True, show_layers=True)
     treatment.plot(figsize=(7, 5), plots=['alpha'], saveFig=True, filename='example_treatment', timestamp=False)
     treatment.save2sheet(timestamp=False, filename='example_treatment', nthOct=1)
-    bands, filtered_alpha, available_data = treatment.filter_alpha(figsize=(7, 5),
-                                                                   plot='available',
-                                                                   show=True,
-                                                                   nthOct=1,
-                                                                   returnValues=True)
+    bands, filtered_alpha = treatment.filter_alpha(figsize=(7, 5),
+                                                   plot='available',
+                                                   show=True,
+                                                   nthOct=1,
+                                                   returnValues=True)
 
 ## Example - MaterialModel
     from tmm.material_model import MaterialModel
@@ -46,11 +46,11 @@ Toolbox for design and prediction of multilayered acoustic treatments. Also cont
     mm.door()
     mm.plot(figsize=(7, 5), plots=['alpha'], saveFig=True, filename='example_door', timestamp=False)
     mm.save2sheet(timestamp=False, filename='example_door', nthOct=1)
-    bands, filtered_alpha, available_data = mm.filter_alpha(figsize=(7, 5),
-                                                            plot='available',
-                                                            show=True,
-                                                            nthOct=1,
-                                                            returnValues=True)
+    bands, filtered_alpha= mm.filter_alpha(figsize=(7, 5),
+                                           plot='available',
+                                           show=True,
+                                           nthOct=1,
+                                           returnValues=True)
 
 ## Contact
 For questions about usage, bugs, licensing and/or contributions contact me at rinaldipp@gmail.com .

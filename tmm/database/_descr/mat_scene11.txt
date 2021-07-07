@@ -1,0 +1,49 @@
+## Material/Surface information file "mat_scene11" ('Large room')
+
+Author: 					Lukas Aspöck / las@akustik.rwth-aachen.de
+Date:						2016/07/11	
+
+Notes:						This file contains information about the boundary conditions of the materials (7):
+							"mat_scene11_linoleum", "mat_scene11_concrete", "mat_scene11_seating", "mat_scene11_brickwall", "mat_scene11_woodPanels", "mat_scene11_whitePanels", "mat_scene11_parquet"
+														
+							All relevant values are given in separate files in the csv-format							
+
+
+## Material information:
+
+Scenes:						11
+Origin of data: 			Estimated data for absorption and scattering coefficients (based on database values and in situ measurements)
+Angle of incidence:			random incidence
+Frequency Range:			20 Hz - 20 kHz (31 third octave values, see line 1 in csv file)	
+
+Absorption coefficients:	[x] (see line 2 in csv file)
+Scattering coefficients: 	[x] (see line 3 in csv file) 
+Impedance values:			[ ]
+
+Data files:					/_csv/mat_scene11_linoleum.csv
+							/_csv/mat_scene11_concrete.csv
+							/_csv/mat_scene11_seating.csv
+							/_csv/mat_scene11_brickwall.csv
+							/_csv/mat_scene11_woodPanels.csv
+							/_csv/mat_scene11_whitePanels.csv
+							/_csv/mat_scene11_parquet.csv
+							
+Image files:
+							
+							/_img/mat_scene11_brickwall_1.JPG
+							/_img/mat_scene11_brickwall_2.JPG
+							/_img/mat_scene11_brickwall_3.JPG
+							/_img/mat_scene11_concrete_1.JPG
+							/_img/mat_scene11_concrete_2.JPG
+							/_img/mat_scene11_concrete_3.JPG
+							/_img/mat_scene11_linoleum_1.JPG
+							/_img/mat_scene11_parquet_1.JPG
+							/_img/mat_scene11_parquet_2.JPG
+							/_img/mat_scene11_seating_1.JPG
+							/_img/mat_scene11_whitePanels_1.JPG
+							/_img/mat_scene11_whitePanels_2.JPG
+							/_img/mat_scene11_whitePanels_3.JPG
+							/_img/mat_scene11_whitePanels_4.JPG
+							/_img/mat_scene11_woodPanels_1.JPG
+							/_img/mat_scene11_woodPanels_2.JPG
+

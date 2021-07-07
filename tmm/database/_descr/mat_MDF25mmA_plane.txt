@@ -1,0 +1,26 @@
+## Material/Surface information file "mat_MDF25mmA_plane": 25mm MDF sheet
+
+Author: 					Lukas Aspöck / las@akustik.rwth-aachen.de
+Date:						2016/06/25	
+
+Notes:						This file contains information about the boundary conditions of the material "mat_MDF25mmA_plane"
+							All relevant values are given in separate files in the csv-format
+							If the simulation engine is able to process scattering coefficients, please use the provided coefficients
+
+
+## Material information:
+
+Scenes:						02, 03
+Origin of data: 			Measured (Impedance tube) between 100 Hz - 4 kHz, estimated and extrapolated for low and high frequencies 
+Angle of incidence:			0° (30°, 45°, 60°) (use normal incidence data for all angles) // [ 0°  = normal incidence, 90° = grazing incidence]
+Frequency Range:			20 Hz - 20 kHz (31 third octave values, see line 1 in csv file)		
+
+Absorption coefficients:	[x] (see line 2 in csv file)
+Scattering coefficients: 	[x] (see line 3 in csv file)
+Impedance values:			[ ]
+
+Density:					701.2 kg/m³
+Mass per area:				m''= 17.53 kg/m²
+	
+Data files:					/_csv/mat_MDF25mmA_plane_00deg.csv
+							

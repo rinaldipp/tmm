@@ -1,0 +1,42 @@
+## Material/Surface information file "mat_scene10" ('Medium room')
+
+Author: 					Lukas Aspöck / las@akustik.rwth-aachen.de
+Date:						2016/07/11	
+
+Notes:						This file contains information about the boundary conditions of the materials (6):
+							"mat_scene10_floor", "mat_scene10_seating", "mat_scene10_plaster", "mat_scene10_ceiling", "mat_scene10_stagePanels", "mat_scene10_structuredPlaster"
+														
+							All relevant values are given in separate files in the csv-format							
+
+
+## Material information:
+
+Scenes:						10
+Origin of data: 			Estimated data for absorption and scattering coefficients (based on database values and in situ measurements)
+Angle of incidence:			random incidence
+Frequency Range:			20 Hz - 20 kHz (31 third octave values, see line 1 in csv file)	
+
+Absorption coefficients:	[x] (see line 2 in csv file)
+Scattering coefficients: 	[x] (see line 3 in csv file) 
+Impedance values:			[ ]
+
+Data files:					/_csv/mat_scene10_floor.csv
+							/_csv/mat_scene10_seating.csv
+							/_csv/mat_scene10_plaster.csv
+							/_csv/mat_scene10_ceiling.csv
+							/_csv/mat_scene10_stagePanels.csv
+							/_csv/mat_scene10_structuredPlaster.csv
+							
+Image files:
+							/_img/mat_scene10_ceiling.JPG
+							/_img/mat_scene10_floor_1.JPG
+							/_img/mat_scene10_floor_2.JPG
+							/_img/mat_scene10_plaster.JPG														
+							/_img/mat_scene10_seating_1.JPG														
+							/_img/mat_scene10_seating_2.JPG														
+							/_img/mat_scene10_seating_3.JPG														
+							/_img/mat_scene10_seating_4.JPG		
+							/_img/mat_scene10_stagePanels_1.JPG														
+							/_img/mat_scene10_stagePanels_2.JPG														
+							/_img/mat_scene10_structuredPlaster_1.JPG
+							/_img/mat_scene10_structuredPlaster_2.JPG									

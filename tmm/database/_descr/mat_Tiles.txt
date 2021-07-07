@@ -1,0 +1,22 @@
+## Material/Surface information file "mat_Tiles": Tiles of semi anechoic chamber
+
+Author: 					Lukas Aspöck / las@akustik.rwth-aachen.de
+Date:						2016/07/07	
+
+Notes:						This file contains information about the boundary conditions of the material "mat_Tiles"
+							All relevant values are given in separate files in the csv-format
+
+## Material information:
+
+Scenes:						01, 05, 06, 07
+Origin of data: 			PTB database values; estimated and extrapolated for low and high frequencies 
+Angle of incidence:			- (random incidence)
+Frequency Range:			20 Hz - 20 kHz (31 third octave values, see line 1 in csv file)		
+
+Absorption coefficients:	[x] (see line 2 in csv file)
+Scattering coefficients: 	[x] (see line 3 in csv file) 
+Impedance values:			[ ]
+
+
+Data files:					/_csv/mat_Tiles.csv
+							

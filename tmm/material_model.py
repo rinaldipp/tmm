@@ -1,21 +1,15 @@
-import collections
 import numpy as np
-import numpy.matlib
 import os
-import mpmath as mp
 from matplotlib import ticker, gridspec, style, rcParams
-from matplotlib.ticker import FormatStrFormatter
 from matplotlib import pyplot as plt
-import matplotlib
 from matplotlib import style
-import matplotlib as mpl
 import pandas
 import xlsxwriter
 from scipy.interpolate import CubicSpline
 from scipy.signal import butter, freqz, savgol_filter
 import time
 import pytta
-from tmm.database.path import path as database_path
+from database.path import path as database_path
 
 outputs = os.getcwd()
 style.use('seaborn-colorblind')
@@ -57,8 +51,7 @@ class MaterialModel:
     @property
     def z0(self):
         return 1
-
-    #         return self.rho0 * self.c0
+        # return self.rho0 * self.c0
 
     @property
     def alpha(self):
@@ -71,14 +64,21 @@ class MaterialModel:
 
     def reflection_and_absorption_coefficient(self, zs):
         """
-        Calculate reflection coefficient (R) and absorption coefficient (alpha)
-        for a given surface impedance zs.
-        Acoustic Absorbers and Diffusers by Trevor Cox and Peter D'Antonio
-        Eqs. from Chapter 1
-        """
+        Calculate reflection coefficient and absorption coefficient for a given surface impedance.
 
-        R = (zs - self.z0) / (zs + self.z0)  # Reflection coefficient
-        alpha = 1 - np.abs(R) ** 2  # Absorption coefficient
+        Parameters
+        ----------
+        zs : array
+            Surface impedance.
+        Returns
+        -------
+        R : array
+            Reflection coefficient.
+        alpha : array
+            Absorption coefficient.
+        """
+        R = (zs - self.z0) / (zs + self.z0)
+        alpha = 1 - np.abs(R) ** 2
 
         return R, alpha
 
@@ -197,8 +197,8 @@ class MaterialModel:
         self.z = 1 / YsInterp
         self.s = SsInterp
 
-    def door(self, SampleRate=44100, CrossoverFrequency=250, rho_m=375, d=0.043, A=2.2 * 0.97, fRes=95, smooth=True):
-        """"
+    def door(self, SampleRate=44100, CrossoverFrequency=250, rho_m=375, d=0.043, A=2.2*0.97, fRes=95, smooth=False):
+        """
         This is a model of the door material defined in Scene 9 of the GRAS
         database. It is entirely fabricated from other datasets, since no data
         was given for this component in the GRAS database. It attempts to define
@@ -229,15 +229,27 @@ class MaterialModel:
 
         These are combined using the non-linear crossover of Aretz el al.
 
-        Input data:
-         - SampleRate = 44100 # Sample rate [Hz]
-         - CrossoverFrequency = 250  # Crossover frequency [Hz]
-         - rho_m = 375  # Assumed bulk density [kg/m^3]
-         - d = 0.043  # Assumed thickness [m]
-         - A = 2.2 * 0.97  # Area [m^2]
-         - fRes = 95  # Assumed fundamental panel resonance frequency [Hz]
-        """
+        Parameters
+        ----------
+        SampleRate : int, optional
+            Sampling rate [Hz]
+        CrossoverFrequency : int, optional
+            Crossover frequency between the models [Hz]
+        rho_m : int or float, optional
+            Assumed bulk density [kg/m^3]
+        d : float, optional
+            Assumed thickness [m]
+        A : float, optional
+            Area [m^2]
+        fRes : int, optional
+            Assumed fundamental panel resonance frequency [Hz]
+        smooth : bool, optional
+            Boolean to choose whether apply smoothing to the curve or not.
 
+        Returns
+        -------
+        Nothing.
+        """
         # Model 1: purely resistive fit to octave-band absorption data:
 
         # Measured data:
@@ -277,11 +289,13 @@ class MaterialModel:
         Ys = Ys * np.exp(1j * np.angle(Ys2))  # Multiply the phase from MSD model back in
 
         if smooth:
-            Ys = savgol_filter(Ys, 31, 3)  # Smoothing
+            Ys_real = savgol_filter(np.real(Ys), 31, 3)
+            Ys_imag = savgol_filter(np.imag(Ys), 31, 3)
+            Ys = Ys_real + 1j * Ys_imag
 
         self.z = 1 / Ys
 
-    def window(self, SampleRate=44100, CrossoverFrequency=200, rho_m=2500, d=0.0067, A=5.33, fRes=6.66, smooth=True):
+    def window(self, SampleRate=44100, CrossoverFrequency=200, rho_m=2500, d=0.0067, A=5.33, fRes=6.66, smooth=False):
         """
         This is a model of the windows material defined in Scene 9 of the GRAS
         database. It combines two approaches:
@@ -360,9 +374,94 @@ class MaterialModel:
         Ys = Ys * np.exp(1j * np.angle(Ys2))  # Multiply the phase from MSD model back in
 
         if smooth:
-            Ys = savgol_filter(Ys, 31, 3)  # Smoothing
+            Ys_real = savgol_filter(np.real(Ys), 31, 3)
+            Ys_imag = savgol_filter(np.imag(Ys), 31, 3)
+            Ys = Ys_real + 1j * Ys_imag
 
         self.z = 1 / Ys
+
+    def filter_alpha(self, nthOct=1, plot=True, returnValues=False, show=False, figsize=(15, 5)):
+        """
+        Filters the absorption coefficient into nthOct bands.
+
+        Parameters
+        ----------
+        nthOct : int, optional
+            Fractional octave bands that the absorption will be filtered to.
+        plot : bool, optional
+            Boolean to display plot with filtered absorption.
+        returnValues : bool, optional
+            Boolean to return the bands and filetered values.
+        show : bool, optional
+            Boolean to display the filtered values in a table.
+        figsize : tuple, optional
+            Tuple containing the width and height of the figure.
+
+        Returns
+        -------
+        bands : ndarray
+            An array containing the center frequencies of the available bands.
+        result : ndarray
+            An array containing the filtered absorption coefficient in the available bands.
+        """
+        bands = pytta.utils.fractional_octave_frequencies(nthOct=nthOct)  # [band_min, band_center, band_max]
+        bands = bands[np.argwhere((bands[:, 1] >= self.fmin) & (bands[:, 1] <= self.fmax))[:, 0]]
+        idx = np.array([np.argwhere((self.freq >= bands[a, 0]) & (self.freq <= bands[a, 2])) for a in
+                          np.arange(0, len(bands))], dtype=object)
+        result = np.array([np.sum(self.alpha[idx[a]]) / len(idx[a]) for a in np.arange(0, len(bands))], dtype=object)
+        result = np.nan_to_num(result)
+
+        # Plot
+        if plot:
+            fig, ax1 = plt.subplots(figsize=figsize)
+            ax1.semilogx(self.freq, self.alpha, label='Narrowband')
+            ax2 = ax1.twiny()
+            ax2.set_xscale('log')
+            ax1.semilogx(bands[:, 1], result, 'o-', label=f'1/{nthOct} octave band')
+            x = bands[:, 1].tolist()
+            ax2.set_xticks([freq for freq in x])
+            ax2.set_xticklabels([f'{freq:0.1f}' for freq in x])
+            ax2.set_xlim(ax1.get_xlim())
+            ax1.set_ylabel('Absorption Coefficient [-]')
+            ax1.set_xlabel('Narrowband Frequency [Hz]')
+            ax2.set_xlabel(f'1/{nthOct} Octave Bands [Hz]')
+            ax1.set_ylim([-0.1, 1.1])
+            ax1.legend(loc='best')
+            ax1.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
+            ax1.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
+            ax1.tick_params(which='minor', length=5, rotation=-90,
+                            axis='x')  # Set major and minor ticks to same length
+            ax1.tick_params(which='major', length=5, rotation=-90,
+                            axis='x')  # Set major and minor ticks to same length
+            ax2.tick_params(which='major', length=5, rotation=-90,
+                            axis='x')  # Set major and minor ticks to same length
+            ax1.minorticks_on()  # Set major and minor ticks to same length
+            ax2.minorticks_off()
+            ax1.grid('minor')
+            plt.show()
+
+        if show:
+            pandas.set_option("display.precision", 2)
+            freq_bands = []
+            absorption = []
+            absorption_percentual = []
+            #             for key, value in available_data.items():
+            for i in range(len(bands)):
+                freq_bands.append(float(f'{bands[i, 1]:0.2f}'))
+                absorption.append(float(f'{result[i]:0.2f}'))
+                absorption_percentual.append(float(f'{result[i] * 100:0.0f}'))
+            data = {'Bands [Hz]': freq_bands, 'Absorption [-]': absorption, 'Absorption [%]': absorption_percentual}
+            df = pandas.DataFrame(data=data).set_index('Bands [Hz]').T
+            df = df.style.set_caption(f'1/{nthOct} Octave Absorption Data')
+
+            try:
+                from IPython.display import display
+                display(df)
+            except:
+                print('IPython.diplay unavailable.')
+
+        if returnValues:
+            return bands[:, 1], result
 
     def save2sheet(self, filename='MaterialModel', timestamp=True, ext='.xlsx', chart_styles=[35, 36], nthOct=3):
 
@@ -385,10 +484,6 @@ class MaterialModel:
         # Setting formats
         bold = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'center', 'border': 2})
         regular = workbook.add_format({'bold': False, 'font_color': 'black', 'align': 'center', 'border': 1})
-        regular_left_bold = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'right', 'border': 1,
-                                                 })
-        regular_left = workbook.add_format({'bold': False, 'font_color': 'black', 'align': 'left', 'border': 1,
-                                            })
 
         # Adding frequency related data
         worksheet.write(0, 0, 'Frequency', bold)
@@ -434,9 +529,7 @@ class MaterialModel:
         worksheet.write(line, idx, 'Frequency Band [Hz]', bold)
         worksheet.write(line, idx + 1, 'Absorption Coeffiecient [-]', bold)
         line += 1
-        _, _, octValues = self.filter_alpha(nthOct=nthOct, plot=False, returnValues=True)
-        lists = sorted(octValues.items())  # sorted by key, return a list of tuples
-        xOct, yOct = zip(*lists)  # unpack a list of pairs into two tuples
+        xOct, yOct = self.filter_alpha(nthOct=nthOct, plot=False, returnValues=True)
         for x, y in zip(xOct, yOct):
             worksheet.write(line, idx, x, regular)
             worksheet.write(line, idx + 1, y, regular)
@@ -450,15 +543,36 @@ class MaterialModel:
 
         print(f'Sheet saved to ', full_path)
 
-    def plot(self, figsize=(15, 5), plots=['alpha', 'z', 'y', 'scat'], saveFig=False, filename='TMM', timestamp=True,
-             ext='.png', max_mode='all'):
+    def plot(self, figsize=(15, 5), plots=['z', 'y', 'alpha'], saveFig=False, filename='TMM', timestamp=True,
+             ext='.png'):
         """
-        Displays device information.
+        Plots impedance, admittance and absorption curves.
+
+        Parameters
+        ----------
+        figsize : tuple, optional
+            Tuple containing the width and height of the figure.
+        plots : list of strings, optional
+            Desired curves to be plotted. 'z' for impedance, 'y' for admittance and 'alpha' for absorption.
+        saveFig : bool, optional
+            Option to save the plot as an image.
+        filename : strint, optional
+            Name to be added in the filename:
+        timestamp : bool, optional
+            Boolean to add timestamping to the filename.
+        ext : string, optional
+            Desired file extension.
+        max_mode : None, int or string
+            Variable to set a maximum limit to peak detection in the absorption coefficient.
+            'all' for no limit, None for  no detection or int for maximum detection frequency.
+
+        Returns
+        -------
+        Nothing.
         """
 
         fig = plt.figure(figsize=figsize)
-        nplots = len(plots) if len(plots) <= 3 else 3
-        gs = gridspec.GridSpec(1, nplots)
+        gs = gridspec.GridSpec(1, len(plots))
 
         i = 0
         if 'z' in plots or 'Z' in plots:
@@ -467,6 +581,7 @@ class MaterialModel:
             ax_z.set_xlabel('Frequency [Hz]')
             ax_z.set_ylabel('Normalized Surface Impedance [Z/Z0]')
             ax_z.semilogx(self.freq, np.real(self.z), linewidth=2, label='Real')
+            ax_z.semilogx(self.freq, np.imag(self.z), linewidth=2, label='Real')
             ax_z.set_xlim([(np.min(self.freq)), (np.max(self.freq))])
             ax_z.axhline(y=0, color='k', linewidth=0.5)
             ax_z.axhline(y=1, linestyle='--', color='gray')
@@ -555,108 +670,6 @@ class MaterialModel:
         plt.show()
 
 
-    def filter_alpha(self, nthOct=1, plot='available', warning=False, returnValues=False, show=False, figsize=(15, 5)):
-
-        bands = pytta.utils.fractional_octave_frequencies(nthOct=nthOct)
-        result = np.array([0], float)
-        available_data = {}
-        """
-
-        Parameters
-        ----------
-        freq : array of int
-            The frequency values.
-        alpha : array of float
-            The sound absorption coefficient you would like to filter.
-        nthOct : int
-            How many bands per octave. Default is 3 = 1/3 octave band.
-
-        Returns
-        -------
-        array of float
-            The center frequency for each band.
-        array of float
-            The sound absorption coefficient filtered.
-        """
-        # Compute the acoustic absorption coefficient per octave band
-        for a in np.arange(1, len(bands)):
-            result = np.append(result, 0)  # band[a] = 0
-            idx = np.argwhere((self.freq >= bands[a, 0]) & (self.freq < bands[a, 2]))
-            # If we have no 'alpha' point in this band
-            if (len(idx) == 0):
-                if warning:
-                    print(f'Warning: no point found in band centered at {bands[a, 1]} Hz')
-            # If we have only 1 'alpha' point in this band
-            elif (len(idx) == 1):
-                if warning:
-                    print(f'Warning: only one point found in band centered at {bands[a, 1]} Hz')
-                result[a] = self.alpha[idx]
-            # If we have more than 1 'alpha' point in this band
-            elif (len(idx) > 1):
-                for b in np.arange(len(idx) - 1):
-                    result[a] = result[a] + (self.freq[idx[0] + b] - self.freq[idx[0] + b - 1]) * abs(
-                        self.alpha[idx[1] + b] + self.alpha[idx[0] + b - 1]) / 2
-                result[a] = result[a] / (self.freq[idx[len(idx) - 1]] - self.freq[idx[0]])
-                available_data[bands[a, 1]] = result[a]
-
-        # Plot
-        if plot:
-            fig, ax1 = plt.subplots(figsize=figsize)
-            ax1.semilogx(self.freq, self.alpha, label='Narrowband')
-            ax2 = ax1.twiny()
-            ax2.set_xscale('log')
-            if plot == 'available':
-                lists = sorted(available_data.items())  # sorted by key, return a list of tuples
-                x, y = zip(*lists)  # unpack a list of pairs into two tuples
-                ax1.semilogx(x, y, 'o-', label=f'1/{nthOct} octave band')
-                ax1.set_xlim([min(self.freq), max(self.freq)])
-            elif plot == 'all':
-                ax1.semilogx(bands[:, 1], result, 'o-', label=f'1/{nthOct} octave band')
-                x = bands[:, 1].tolist()
-            ax2.set_xticks([freq for freq in x])
-            ax2.set_xticklabels([f'{freq:0.1f}' for freq in x])
-            ax2.set_xlim(ax1.get_xlim())
-            ax1.set_ylabel('Absorption Coefficient [-]')
-            ax1.set_xlabel('Narrowband Frequency [Hz]')
-            ax2.set_xlabel(f'1/{nthOct} Octave Bands [Hz]')
-            ax1.set_ylim([-0.1, 1.1])
-            ax1.legend(loc='best')
-            ax1.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax1.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax1.tick_params(which='minor', length=5, rotation=-90,
-                            axis='x')  # Set major and minor ticks to same length
-            ax1.tick_params(which='major', length=5, rotation=-90,
-                            axis='x')  # Set major and minor ticks to same length
-            ax2.tick_params(which='major', length=5, rotation=-90,
-                            axis='x')  # Set major and minor ticks to same length
-            ax1.minorticks_on()  # Set major and minor ticks to same length
-            ax2.minorticks_off()
-            ax1.grid('minor')
-            plt.show()
-
-        if show:
-            pandas.set_option("display.precision", 2)
-            freq_bands = []
-            absorption = []
-            absorption_percentual = []
-            for key, value in available_data.items():
-                freq_bands.append(float(f'{key:0.2}'))
-                absorption.append(float(f'{value:0.2}'))
-                absorption_percentual.append(float(f'{value * 100:0.2}'))
-            data = {'Bands [Hz]': freq_bands, 'Absorption [-]': absorption, 'Absorption [%]': absorption_percentual}
-            df = pandas.DataFrame(data=data).set_index('Bands [Hz]').T
-            df = df.style.set_caption(f'1/{nthOct} Octave Absorption Data')
-
-            try:
-                from IPython.display import display
-                display(df)
-            except:
-                print('IPython.diplay unavailable.')
-
-        if returnValues:
-            return bands[:, 1], result, available_data
-
-
 if __name__ == '__main__':
 
     from material_model import MaterialModel
@@ -668,8 +681,8 @@ if __name__ == '__main__':
     mm.door()
     mm.plot(figsize=(7, 5), plots=['alpha'], saveFig=True, filename='example_door', timestamp=False)
     mm.save2sheet(timestamp=False, filename='example_door', nthOct=1)
-    bands, filtered_alpha, available_data = mm.filter_alpha(figsize=(7, 5),
-                                                            plot='available',
-                                                            show=True,
-                                                            nthOct=1,
-                                                            returnValues=True)
+    bands, filtered_alpha = mm.filter_alpha(figsize=(7, 5),
+                                            plot='available',
+                                            show=True,
+                                            nthOct=1,
+                                            returnValues=True)
