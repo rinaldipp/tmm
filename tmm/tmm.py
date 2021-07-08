@@ -225,8 +225,8 @@ class TMM:
     def porous_layer(self, sigma=27, t=5, model='mac', fibre_type=1, layer=None):
         """
         Adds a layer of porous material to the existing device.
-        Parameters
 
+        Parameters
         ----------
         sigma : float or int, optional
             Flow resistivity of the porous material [k*Pa*s/m²]
@@ -586,6 +586,7 @@ class TMM:
         ----------
         z : array
             Multidimensional array with angle dependent set of impedances.
+
         Returns
         -------
         z_field : array
@@ -806,16 +807,16 @@ class TMM:
 
         timestr = time.strftime("%Y%m%d-%H%M_")
         if self.project_folder is None:
-            full_path = outputs + '\\' + filename + ext
+            full_path = outputs + os.sep + filename + ext
             if timestamp is True:
-                full_path = outputs + '\\' + timestr + filename + ext
+                full_path = outputs + os.sep + timestr + filename + ext
         else:
-            folderCheck = os.path.exists(self.project_folder + '\\Treatments')
+            folderCheck = os.path.exists(self.project_folder + os.sep + 'Treatments')
             if folderCheck is False:
-                os.mkdir(self.project_folder + '\\Treatments')
-            full_path = self.project_folder + '\\Treatments\\' + filename + ext
+                os.mkdir(self.project_folder + os.sep + 'Treatments')
+            full_path = self.project_folder + os.sep + 'Treatments' + filename + ext
             if timestamp is True:
-                full_path = self.project_folder + '\\Treatments\\' + timestr + filename + ext
+                full_path = self.project_folder + os.sep + 'Treatments' + os.sep + timestr + filename + ext
 
         workbook = xlsxwriter.Workbook(full_path)
         worksheet = workbook.add_worksheet()
@@ -1053,16 +1054,16 @@ class TMM:
         if saveFig:
             timestr = time.strftime("%Y%m%d-%H%M_")
             if self.project_folder is None:
-                full_path = outputs + '\\' + filename + ext
+                full_path = outputs + os.sep + filename + ext
                 if timestamp is True:
-                    full_path = outputs + '\\' + timestr + filename + ext
+                    full_path = outputs + os.sep + timestr + filename + ext
             else:
-                folderCheck = os.path.exists(self.project_folder + '\\Treatments')
+                folderCheck = os.path.exists(self.project_folder + os.sep + 'Treatments')
                 if folderCheck is False:
-                    os.mkdir(self.project_folder + '\\Treatments')
-                full_path = self.project_folder + '\\Treatments\\' + filename + ext
+                    os.mkdir(self.project_folder + os.sep + 'Treatments')
+                full_path = self.project_folder + os.sep + 'Treatments' + os.sep + filename + ext
                 if timestamp is True:
-                    full_path = self.project_folder + '\\Treatments\\' + timestr + filename + ext
+                    full_path = self.project_folder + os.sep + 'Treatments' + os.sep + timestr + filename + ext
 
             plt.savefig(full_path, dpi=100)
             print('Image saved to ', full_path)

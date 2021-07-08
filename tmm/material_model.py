@@ -91,7 +91,7 @@ class MaterialModel:
         admittance found from the measured absorption coefficient data using a spline fit.
         """
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv\\mat_scene09_floor.csv', header=None).T
+        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_scene09_floor.csv', header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -114,7 +114,7 @@ class MaterialModel:
         admittance found from the measured absorption coefficient data using a spline fit.
         """
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv\\mat_scene09_ceiling.csv', header=None).T
+        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_scene09_ceiling.csv', header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -137,7 +137,7 @@ class MaterialModel:
         admittance found from the measured absorption coefficient data using a spline fit.
         """
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv\\mat_scene09_concrete.csv', header=None).T
+        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_scene09_concrete.csv', header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -160,7 +160,7 @@ class MaterialModel:
         admittance found from the measured absorption coefficient data using a spline fit.
         """
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv\\mat_scene09_plaster.csv', header=None).T
+        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_scene09_plaster.csv', header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -183,7 +183,7 @@ class MaterialModel:
         admittance found from the measured absorption coefficient data using a spline fit.
         """
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv\\mat_MDF25mmA_plane_00deg.csv', header=None).T
+        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_MDF25mmA_plane_00deg.csv', header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -336,7 +336,7 @@ class MaterialModel:
         # Model 1: purely resistive fit to provided third-octave-band absorption data:
 
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv\\mat_scene09_windows.csv', header=None).T
+        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_scene09_windows.csv', header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -470,16 +470,16 @@ class MaterialModel:
 
         timestr = time.strftime("%Y%m%d-%H%M_")
         if self.project_folder is None:
-            full_path = outputs + '\\' + filename + ext
+            full_path = outputs + os.sep + filename + ext
             if timestamp is True:
-                full_path = outputs + '\\' + timestr + filename + ext
+                full_path = outputs + os.sep + timestr + filename + ext
         else:
-            folderCheck = os.path.exists(self.project_folder + '\\Treatments')
+            folderCheck = os.path.exists(self.project_folder + os.sep + 'Treatments')
             if folderCheck is False:
-                os.mkdir(self.project_folder + '\\Treatments')
-            full_path = self.project_folder + '\\Treatments\\' + filename + ext
+                os.mkdir(self.project_folder + os.sep + 'Treatments')
+            full_path = self.project_folder + os.sep + 'Treatments' + os.sep + filename + ext
             if timestamp is True:
-                full_path = self.project_folder + '\\Treatments\\' + timestr + filename + ext
+                full_path = self.project_folder + os.sep + 'Treatments' + os.sep  + timestr + filename + ext
 
         workbook = xlsxwriter.Workbook(full_path)
         worksheet = workbook.add_worksheet()
@@ -657,16 +657,16 @@ class MaterialModel:
         if saveFig:
             timestr = time.strftime("%Y%m%d-%H%M_")
             if self.project_folder is None:
-                full_path = outputs + '\\' + filename + ext
+                full_path = outputs + os.sep + filename + ext
                 if timestamp is True:
-                    full_path = outputs + '\\' + timestr + filename + ext
+                    full_path = outputs + os.sep + timestr + filename + ext
             else:
-                folderCheck = os.path.exists(self.project_folder + '\\Treatments')
+                folderCheck = os.path.exists(self.project_folder + os.sep + 'Treatments')
                 if folderCheck is False:
-                    os.mkdir(self.project_folder + '\\Treatments')
-                full_path = self.project_folder + '\\Treatments\\' + filename + ext
+                    os.mkdir(self.project_folder + os.sep + 'Treatments')
+                full_path = self.project_folder + os.sep + 'Treatments' + os.sep + filename + ext
                 if timestamp is True:
-                    full_path = self.project_folder + '\\Treatments\\' + timestr + filename + ext
+                    full_path = self.project_folder + os.sep + 'Treatments' + os.sep + timestr + filename + ext
 
             plt.savefig(full_path, dpi=100)
             print('Image saved to ', full_path)
