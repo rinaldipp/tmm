@@ -340,7 +340,7 @@ class TMM:
                               'matrix': Tm,
                               }
 
-    def perforated_panel_layer(self, t=19, d=8, s=16, end_correction='nesterov', method='barrier', layer=None):
+    def perforated_panel_layer(self, t=19, d=8, s=16, end_correction='jb', method='barrier', layer=None):
         """
         Adds a plate with circular perforations to the existing device.
 
@@ -375,7 +375,13 @@ class TMM:
 
         if end_correction == 'nesterov':
             # Acoustic Absorbers and Diffusers by Trevor Cox and Peter D'Antonio
-            delta = 0.8 * (1 - 1.47 * open_area ** 0.5 + 0.47 * open_area ** 1.5)
+            # Circular holes in circular pattern
+            delta = 0.8 * (1 - 1.47 * open_area ** (1/2) + 0.47 * open_area ** 1.5)
+            t_corr = 2 * delta * d_meters / 2 + t_meters
+        elif end_correction == 'jaouen_becot' or end_correction == 'jb':
+            # Acoustic Absorbers and Diffusers by Trevor Cox and Peter D'Antonio
+            # Circular holes in square pattern
+            delta = 0.8 * (1 - 1.13 * open_area ** (1/2) - 0.09 * open_area + 0.27 * open_area ** (3/2))
             t_corr = 2 * delta * d_meters / 2 + t_meters
         elif end_correction == 'beranek':
             # Leo Beranek - Acoustics
