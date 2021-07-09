@@ -820,7 +820,7 @@ class TMM:
             folderCheck = os.path.exists(self.project_folder + os.sep + 'Treatments')
             if folderCheck is False:
                 os.mkdir(self.project_folder + os.sep + 'Treatments')
-            full_path = self.project_folder + os.sep + 'Treatments' + filename + ext
+            full_path = self.project_folder + os.sep + 'Treatments' + os.sep + filename + ext
             if timestamp is True:
                 full_path = self.project_folder + os.sep + 'Treatments' + os.sep + timestr + filename + ext
 

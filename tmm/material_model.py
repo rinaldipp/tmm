@@ -479,7 +479,7 @@ class MaterialModel:
                 os.mkdir(self.project_folder + os.sep + 'Treatments')
             full_path = self.project_folder + os.sep + 'Treatments' + os.sep + filename + ext
             if timestamp is True:
-                full_path = self.project_folder + os.sep + 'Treatments' + os.sep  + timestr + filename + ext
+                full_path = self.project_folder + os.sep + 'Treatments' + os.sep + timestr + filename + ext
 
         workbook = xlsxwriter.Workbook(full_path)
         worksheet = workbook.add_worksheet()
