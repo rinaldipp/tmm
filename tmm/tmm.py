@@ -818,128 +818,145 @@ class TMM:
             if timestamp is True:
                 full_path = self.project_folder + os.sep + 'Treatments' + os.sep + timestr + filename + ext
 
-        workbook = xlsxwriter.Workbook(full_path)
-        worksheet = workbook.add_worksheet()
+        if ext == '.xlsx':
+            workbook = xlsxwriter.Workbook(full_path)
+            worksheet = workbook.add_worksheet()
 
-        # Setting formats
-        bold = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'center', 'border': 2})
-        regular = workbook.add_format({'bold': False, 'font_color': 'black', 'align': 'center', 'border': 1})
-        regular_left_bold = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'right', 'border': 1,
-                                                 })
-        regular_left = workbook.add_format({'bold': False, 'font_color': 'black', 'align': 'left', 'border': 1,
-                                            })
+            # Setting formats
+            bold = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'center', 'border': 2})
+            regular = workbook.add_format({'bold': False, 'font_color': 'black', 'align': 'center', 'border': 1})
+            regular_left_bold = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'right', 'border': 1,
+                                                     })
+            regular_left = workbook.add_format({'bold': False, 'font_color': 'black', 'align': 'left', 'border': 1,
+                                                })
 
-        # Adding frequency related data
-        worksheet.write(0, 0, 'Frequency', bold)
-        worksheet.write(0, 1, 'Real Z', bold)
-        worksheet.write(0, 2, 'Img Z', bold)
-        worksheet.write(0, 3, 'Absorption', bold)
-        for i in range(len(self.freq)):
-            worksheet.write(1 + i, 0, self.freq[i], regular)
-            worksheet.write(1 + i, 1, np.real(self.z_norm[i]), regular)
-            worksheet.write(1 + i, 2, np.imag(self.z_norm[i]), regular)
-            worksheet.write(1 + i, 3, self.alpha[i], regular)
+            # Adding frequency related data
+            worksheet.write(0, 0, 'Frequency', bold)
+            worksheet.write(0, 1, 'Real Z', bold)
+            worksheet.write(0, 2, 'Img Z', bold)
+            worksheet.write(0, 3, 'Absorption', bold)
+            for i in range(len(self.freq)):
+                worksheet.write(1 + i, 0, self.freq[i], regular)
+                worksheet.write(1 + i, 1, np.real(self.z_norm[i]), regular)
+                worksheet.write(1 + i, 2, np.imag(self.z_norm[i]), regular)
+                worksheet.write(1 + i, 3, self.alpha[i], regular)
 
-        # Absorption coefficient plot
-        chart_abs = workbook.add_chart({'type': 'line'})
-        chart_abs.add_series({'name': ['Sheet1', 0, 3],
-                              'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
-                              'values': ['Sheet1', 1, 3, len(self.freq) + 1, 3], })
-        chart_abs.set_title({'name': 'Absorption Coefficient'})
-        chart_abs.set_x_axis({'name': 'Frequency [Hz]'})
-        chart_abs.set_y_axis({'name': 'Alpha [-]'})
-        chart_abs.set_style(chart_styles[0])
-        worksheet.insert_chart('G1', chart_abs, {'x_offset': 0, 'y_offset': 0, 'x_scale': 1.334, 'y_scale': 1.11})
+            # Absorption coefficient plot
+            chart_abs = workbook.add_chart({'type': 'line'})
+            chart_abs.add_series({'name': ['Sheet1', 0, 3],
+                                  'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
+                                  'values': ['Sheet1', 1, 3, len(self.freq) + 1, 3], })
+            chart_abs.set_title({'name': 'Absorption Coefficient'})
+            chart_abs.set_x_axis({'name': 'Frequency [Hz]'})
+            chart_abs.set_y_axis({'name': 'Alpha [-]'})
+            chart_abs.set_style(chart_styles[0])
+            worksheet.insert_chart('G1', chart_abs, {'x_offset': 0, 'y_offset': 0, 'x_scale': 1.334, 'y_scale': 1.11})
 
-        # Impedance plot
-        chart_z = workbook.add_chart({'type': 'line'})
-        chart_z.add_series({'name': ['Sheet1', 0, 1],
-                            'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
-                            'values': ['Sheet1', 1, 1, len(self.freq) + 1, 1], })
-        chart_z.add_series({'name': ['Sheet1', 0, 2],
-                            'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
-                            'values': ['Sheet1', 1, 2, len(self.freq) + 1, 2], })
-        chart_z.set_title({'name': 'Normalized Surface Impedance'})
-        chart_z.set_x_axis({'name': 'Frequency [Hz]'})
-        chart_z.set_y_axis({'name': 'Z [Pa*s/m]'})
-        chart_z.set_style(chart_styles[1])
-        worksheet.insert_chart('G17', chart_z, {'x_offset': 0, 'y_offset': 0, 'x_scale': 1.334, 'y_scale': 1.11})
+            # Impedance plot
+            chart_z = workbook.add_chart({'type': 'line'})
+            chart_z.add_series({'name': ['Sheet1', 0, 1],
+                                'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
+                                'values': ['Sheet1', 1, 1, len(self.freq) + 1, 1], })
+            chart_z.add_series({'name': ['Sheet1', 0, 2],
+                                'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
+                                'values': ['Sheet1', 1, 2, len(self.freq) + 1, 2], })
+            chart_z.set_title({'name': 'Normalized Surface Impedance'})
+            chart_z.set_x_axis({'name': 'Frequency [Hz]'})
+            chart_z.set_y_axis({'name': 'Z [Pa*s/m]'})
+            chart_z.set_style(chart_styles[1])
+            worksheet.insert_chart('G17', chart_z, {'x_offset': 0, 'y_offset': 0, 'x_scale': 1.334, 'y_scale': 1.11})
 
-        # Adding nthOct band absorption coeffiecients
-        line = 0
-        idx = 4
-        worksheet.merge_range(line, idx, line, idx + 1, f'1/{nthOct} octave band absorption coefficients', bold)
-        line += 1
-        worksheet.write(line, idx, 'Frequency Band [Hz]', bold)
-        worksheet.write(line, idx + 1, 'Absorption Coeffiecient [-]', bold)
-        line += 1
-        xOct, yOct = self.filter_alpha(nthOct=nthOct, plot=False, returnValues=True)
-        for x, y in zip(xOct, yOct):
-            worksheet.write(line, idx, x, regular)
-            worksheet.write(line, idx + 1, y, regular)
+            # Adding nthOct band absorption coeffiecients
+            line = 0
+            idx = 4
+            worksheet.merge_range(line, idx, line, idx + 1, f'1/{nthOct} octave band absorption coefficients', bold)
             line += 1
-
-        # Adding device properties
-        total_depth = 0
-        worksheet.merge_range(line, idx, line, idx + 1, 'Device Properties', bold)
-        line += 1
-        worksheet.write(line, idx, '(1 - Front face)', regular)
-        worksheet.write(line, idx + 1, f'({len(self.matrix)} - Rear face)', regular)
-        line += 1
-        worksheet.write(line, idx, 'Sound incidence:', regular_left_bold)
-        worksheet.write(line, idx + 1, self.incidence, regular_left)
-        line += 1
-        worksheet.write(line, idx, 'Angle [°]:', regular_left_bold)
-        if self.incidence == 'diffuse':
-            worksheet.write(line, idx + 1,
-                            f'{min(self.incidence_angle):0.0f} - {max(self.incidence_angle):0.0f}',
-                            regular_left)
-        else:
-            worksheet.write(line, idx + 1,
-                            f'{(self.incidence_angle[0]):0.0f}',
-                            regular_left)
-        line -= 1
-        for i in range(1, len(self.matrix) + 1):
-            if i > 1:
-                line -= 1
-            worksheet.merge_range(1 + i + line, idx, 1 + i + line, idx + 1, f'Layer {i}', bold)
+            worksheet.write(line, idx, 'Frequency Band [Hz]', bold)
+            worksheet.write(line, idx + 1, 'Absorption Coeffiecient [-]', bold)
             line += 1
-            for key, value in self.matrix[i - 1].items():
-                if key != 'matrix':
-                    if isinstance(value, str) or isinstance(value, bool):
-                        worksheet.write(1 + i + line, idx, f'{key}:', regular_left_bold)
-                        worksheet.write(1 + i + line, idx + 1, f'{value}', regular_left)
-                        line += 1
-                    else:
-                        if '[mm]' in key:
-                            converted = key.replace('[mm]', conversion[1])
+            xOct, yOct = self.filter_alpha(nthOct=nthOct, plot=False, returnValues=True)
+            for x, y in zip(xOct, yOct):
+                worksheet.write(line, idx, x, regular)
+                worksheet.write(line, idx + 1, y, regular)
+                line += 1
+
+            # Adding device properties
+            total_depth = 0
+            worksheet.merge_range(line, idx, line, idx + 1, 'Device Properties', bold)
+            line += 1
+            worksheet.write(line, idx, '(1 - Front face)', regular)
+            worksheet.write(line, idx + 1, f'({len(self.matrix)} - Rear face)', regular)
+            line += 1
+            worksheet.write(line, idx, 'Sound incidence:', regular_left_bold)
+            worksheet.write(line, idx + 1, self.incidence, regular_left)
+            line += 1
+            worksheet.write(line, idx, 'Angle [°]:', regular_left_bold)
+            if self.incidence == 'diffuse':
+                worksheet.write(line, idx + 1,
+                                f'{min(self.incidence_angle):0.0f} - {max(self.incidence_angle):0.0f}',
+                                regular_left)
+            else:
+                worksheet.write(line, idx + 1,
+                                f'{(self.incidence_angle[0]):0.0f}',
+                                regular_left)
+            line -= 1
+            for i in range(1, len(self.matrix) + 1):
+                if i > 1:
+                    line -= 1
+                worksheet.merge_range(1 + i + line, idx, 1 + i + line, idx + 1, f'Layer {i}', bold)
+                line += 1
+                for key, value in self.matrix[i - 1].items():
+                    if key != 'matrix':
+                        if isinstance(value, str) or isinstance(value, bool):
                             worksheet.write(1 + i + line, idx, f'{key}:', regular_left_bold)
-                            worksheet.write(1 + i + line, idx + 1, value, regular_left)
-                            line += 1
-                            worksheet.write(1 + i + line, idx, f'{converted}:', regular_left_bold)
-                            worksheet.write(1 + i + line, idx + 1, value * conversion[0], regular_left)
+                            worksheet.write(1 + i + line, idx + 1, f'{value}', regular_left)
                             line += 1
                         else:
-                            worksheet.write(1 + i + line, idx, f'{key}:', regular_left_bold)
-                            worksheet.write(1 + i + line, idx + 1, value, regular_left)
-                            line += 1
-                        if 'thickness' in key:
-                            total_depth += value
+                            if '[mm]' in key:
+                                converted = key.replace('[mm]', conversion[1])
+                                worksheet.write(1 + i + line, idx, f'{key}:', regular_left_bold)
+                                worksheet.write(1 + i + line, idx + 1, value, regular_left)
+                                line += 1
+                                worksheet.write(1 + i + line, idx, f'{converted}:', regular_left_bold)
+                                worksheet.write(1 + i + line, idx + 1, value * conversion[0], regular_left)
+                                line += 1
+                            else:
+                                worksheet.write(1 + i + line, idx, f'{key}:', regular_left_bold)
+                                worksheet.write(1 + i + line, idx + 1, value, regular_left)
+                                line += 1
+                            if 'thickness' in key:
+                                total_depth += value
 
-        worksheet.merge_range(1 + i + line, idx, 1 + i + line, idx + 1, 'Total', bold)
-        line += 1
-        worksheet.write(1 + i + line, idx, f'total treatment depth [mm]:', regular_left_bold)
-        worksheet.write(1 + i + line, idx + 1, total_depth, regular_left)
-        line += 1
-        worksheet.write(1 + i + line, idx, f'total treatment depth {conversion[1]}:', regular_left_bold)
-        worksheet.write(1 + i + line, idx + 1, total_depth * conversion[0], regular_left)
-        line += 1
+            worksheet.merge_range(1 + i + line, idx, 1 + i + line, idx + 1, 'Total', bold)
+            line += 1
+            worksheet.write(1 + i + line, idx, f'total treatment depth [mm]:', regular_left_bold)
+            worksheet.write(1 + i + line, idx + 1, total_depth, regular_left)
+            line += 1
+            worksheet.write(1 + i + line, idx, f'total treatment depth {conversion[1]}:', regular_left_bold)
+            worksheet.write(1 + i + line, idx + 1, total_depth * conversion[0], regular_left)
+            line += 1
 
-        # Setting column widths
-        worksheet.set_column('A:D', 12)
-        worksheet.set_column('E:F', 28)
+            # Setting column widths
+            worksheet.set_column('A:D', 12)
+            worksheet.set_column('E:F', 28)
 
-        workbook.close()
+            workbook.close()
+
+        elif ext == '.csv':
+            df1 = pandas.DataFrame()
+            df1['Frequency'] = self.freq
+            df1['Real Z'] = np.real(self.z_norm)
+            df1['Imag Z'] = np.imag(self.z_norm)
+            df1['Absorption'] = self.alpha
+            df2 = pandas.DataFrame()
+            df2['Bands'], df2[f'1/{nthOct} octave band absorption coefficients'] = self.filter_alpha(nthOct=nthOct,
+                                                                                                     returnValues=True,
+                                                                                                     plot=False)
+            df3 = pandas.concat([df1, df2], axis=1)
+            df3.to_csv(full_path, index=False, float_format='%.3f', sep=';')
+
+        else:
+            raise NameError("Unidentified extension. Available extensions: ['.xlsx', '.csv']")
 
         print(f'Sheet saved to ', full_path)
 

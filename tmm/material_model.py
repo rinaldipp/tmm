@@ -475,68 +475,85 @@ class MaterialModel:
             if timestamp is True:
                 full_path = self.project_folder + os.sep + 'Treatments' + os.sep + timestr + filename + ext
 
-        workbook = xlsxwriter.Workbook(full_path)
-        worksheet = workbook.add_worksheet()
+        if ext == '.xlsx':
+            workbook = xlsxwriter.Workbook(full_path)
+            worksheet = workbook.add_worksheet()
 
-        # Setting formats
-        bold = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'center', 'border': 2})
-        regular = workbook.add_format({'bold': False, 'font_color': 'black', 'align': 'center', 'border': 1})
+            # Setting formats
+            bold = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'center', 'border': 2})
+            regular = workbook.add_format({'bold': False, 'font_color': 'black', 'align': 'center', 'border': 1})
 
-        # Adding frequency related data
-        worksheet.write(0, 0, 'Frequency', bold)
-        worksheet.write(0, 1, 'Real Z', bold)
-        worksheet.write(0, 2, 'Img Z', bold)
-        worksheet.write(0, 3, 'Absorption', bold)
-        for i in range(len(self.freq)):
-            worksheet.write(1 + i, 0, self.freq[i], regular)
-            worksheet.write(1 + i, 1, np.real(self.z[i]), regular)
-            worksheet.write(1 + i, 2, np.imag(self.z[i]), regular)
-            worksheet.write(1 + i, 3, self.alpha[i], regular)
+            # Adding frequency related data
+            worksheet.write(0, 0, 'Frequency', bold)
+            worksheet.write(0, 1, 'Real Z', bold)
+            worksheet.write(0, 2, 'Img Z', bold)
+            worksheet.write(0, 3, 'Absorption', bold)
+            for i in range(len(self.freq)):
+                worksheet.write(1 + i, 0, self.freq[i], regular)
+                worksheet.write(1 + i, 1, np.real(self.z[i]), regular)
+                worksheet.write(1 + i, 2, np.imag(self.z[i]), regular)
+                worksheet.write(1 + i, 3, self.alpha[i], regular)
 
-        # Absorption coefficient plot
-        chart_abs = workbook.add_chart({'type': 'line'})
-        chart_abs.add_series({'name': ['Sheet1', 0, 3],
-                              'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
-                              'values': ['Sheet1', 1, 3, len(self.freq) + 1, 3], })
-        chart_abs.set_title({'name': 'Absorption Coefficient'})
-        chart_abs.set_x_axis({'name': 'Frequency [Hz]'})
-        chart_abs.set_y_axis({'name': 'Alpha [-]'})
-        chart_abs.set_style(chart_styles[0])
-        worksheet.insert_chart('G1', chart_abs, {'x_offset': 0, 'y_offset': 0, 'x_scale': 1.334, 'y_scale': 1.11})
+            # Absorption coefficient plot
+            chart_abs = workbook.add_chart({'type': 'line'})
+            chart_abs.add_series({'name': ['Sheet1', 0, 3],
+                                  'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
+                                  'values': ['Sheet1', 1, 3, len(self.freq) + 1, 3], })
+            chart_abs.set_title({'name': 'Absorption Coefficient'})
+            chart_abs.set_x_axis({'name': 'Frequency [Hz]'})
+            chart_abs.set_y_axis({'name': 'Alpha [-]'})
+            chart_abs.set_style(chart_styles[0])
+            worksheet.insert_chart('G1', chart_abs, {'x_offset': 0, 'y_offset': 0, 'x_scale': 1.334, 'y_scale': 1.11})
 
-        # Impedance plot
-        chart_z = workbook.add_chart({'type': 'line'})
-        chart_z.add_series({'name': ['Sheet1', 0, 1],
-                            'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
-                            'values': ['Sheet1', 1, 1, len(self.freq) + 1, 1], })
-        chart_z.add_series({'name': ['Sheet1', 0, 2],
-                            'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
-                            'values': ['Sheet1', 1, 2, len(self.freq) + 1, 2], })
-        chart_z.set_title({'name': 'Normalized Surface Impedance'})
-        chart_z.set_x_axis({'name': 'Frequency [Hz]'})
-        chart_z.set_y_axis({'name': 'Z [Pa*s/m]'})
-        chart_z.set_style(chart_styles[1])
-        worksheet.insert_chart('G17', chart_z, {'x_offset': 0, 'y_offset': 0, 'x_scale': 1.334, 'y_scale': 1.11})
+            # Impedance plot
+            chart_z = workbook.add_chart({'type': 'line'})
+            chart_z.add_series({'name': ['Sheet1', 0, 1],
+                                'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
+                                'values': ['Sheet1', 1, 1, len(self.freq) + 1, 1], })
+            chart_z.add_series({'name': ['Sheet1', 0, 2],
+                                'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
+                                'values': ['Sheet1', 1, 2, len(self.freq) + 1, 2], })
+            chart_z.set_title({'name': 'Normalized Surface Impedance'})
+            chart_z.set_x_axis({'name': 'Frequency [Hz]'})
+            chart_z.set_y_axis({'name': 'Z [Pa*s/m]'})
+            chart_z.set_style(chart_styles[1])
+            worksheet.insert_chart('G17', chart_z, {'x_offset': 0, 'y_offset': 0, 'x_scale': 1.334, 'y_scale': 1.11})
 
-        # Adding nthOct band absorption coeffiecients
-        line = 0
-        idx = 4
-        worksheet.merge_range(line, idx, line, idx + 1, f'1/{nthOct} octave band absorption coefficients', bold)
-        line += 1
-        worksheet.write(line, idx, 'Frequency Band [Hz]', bold)
-        worksheet.write(line, idx + 1, 'Absorption Coeffiecient [-]', bold)
-        line += 1
-        xOct, yOct = self.filter_alpha(nthOct=nthOct, plot=False, returnValues=True)
-        for x, y in zip(xOct, yOct):
-            worksheet.write(line, idx, x, regular)
-            worksheet.write(line, idx + 1, y, regular)
+            # Adding nthOct band absorption coeffiecients
+            line = 0
+            idx = 4
+            worksheet.merge_range(line, idx, line, idx + 1, f'1/{nthOct} octave band absorption coefficients', bold)
             line += 1
+            worksheet.write(line, idx, 'Frequency Band [Hz]', bold)
+            worksheet.write(line, idx + 1, 'Absorption Coeffiecient [-]', bold)
+            line += 1
+            xOct, yOct = self.filter_alpha(nthOct=nthOct, plot=False, returnValues=True)
+            for x, y in zip(xOct, yOct):
+                worksheet.write(line, idx, x, regular)
+                worksheet.write(line, idx + 1, y, regular)
+                line += 1
 
-        # Setting column widths
-        worksheet.set_column('A:D', 12)
-        worksheet.set_column('E:F', 28)
+            # Setting column widths
+            worksheet.set_column('A:D', 12)
+            worksheet.set_column('E:F', 28)
 
-        workbook.close()
+            workbook.close()
+
+        elif ext == '.csv':
+            df1 = pandas.DataFrame()
+            df1['Frequency'] = self.freq
+            df1['Real Z'] = np.real(self.z)
+            df1['Imag Z'] = np.imag(self.z)
+            df1['Absorption'] = self.alpha
+            df2 = pandas.DataFrame()
+            df2['Bands'], df2[f'1/{nthOct} octave band absorption coefficients'] = self.filter_alpha(nthOct=nthOct,
+                                                                                                     returnValues=True,
+                                                                                                     plot=False)
+            df3 = pandas.concat([df1, df2], axis=1)
+            df3.to_csv(full_path, index=False, float_format='%.3f', sep=';')
+
+        else:
+            raise NameError("Unidentified extension. Available extensions: ['.xlsx', '.csv']")
 
         print(f'Sheet saved to ', full_path)
 
