@@ -46,11 +46,11 @@ Toolbox for design and prediction of multilayered acoustic treatments. Also cont
     mm.door()
     mm.plot(figsize=(7, 5), plots=['alpha'], saveFig=True, filename='example_door', timestamp=False)
     mm.save2sheet(timestamp=False, filename='example_door', nthOct=1)
-    bands, filtered_alpha= mm.filter_alpha(figsize=(7, 5),
-                                           plot='available',
-                                           show=True,
-                                           nthOct=1,
-                                           returnValues=True)
+    bands, filtered_alpha = mm.filter_alpha(figsize=(7, 5),
+                                            plot='available',
+                                            show=True,
+                                            nthOct=1,
+                                            returnValues=True)
 
 ## Contact
 For questions about usage, bugs, licensing and/or contributions contact me at rinaldipp@gmail.com .
