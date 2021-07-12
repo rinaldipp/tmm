@@ -727,12 +727,7 @@ class TMM:
         result : ndarray
             An array containing the filtered absorption coefficient in the available bands.
         """
-        bands = pytta.utils.fractional_octave_frequencies(nthOct=nthOct)  # [band_min, band_center, band_max]
-        bands = bands[np.argwhere((bands[:, 1] >= self.fmin) & (bands[:, 1] <= self.fmax))[:, 0]]
-        idx = np.array([np.argwhere((self.freq >= bands[a, 0]) & (self.freq <= bands[a, 2])) for a in
-                          np.arange(0, len(bands))], dtype=object)
-        result = np.array([np.sum(self.alpha[idx[a]]) / len(idx[a]) for a in np.arange(0, len(bands))], dtype=object)
-        result = np.nan_to_num(result)
+        bands, result = pytta.utils.filter_values(self.freq, self.alpha, nthOct=nthOct)
 
         # Plot
         if plot:
@@ -740,10 +735,9 @@ class TMM:
             ax1.semilogx(self.freq, self.alpha, label='Narrowband')
             ax2 = ax1.twiny()
             ax2.set_xscale('log')
-            ax1.semilogx(bands[:, 1], result, 'o-', label=f'1/{nthOct} octave band')
-            x = bands[:, 1].tolist()
-            ax2.set_xticks([freq for freq in x])
-            ax2.set_xticklabels([f'{freq:0.1f}' for freq in x])
+            ax1.semilogx(bands, result, 'o-', label=f'1/{nthOct} octave band')
+            ax2.set_xticks([freq for freq in bands.tolist()])
+            ax2.set_xticklabels([f'{freq:0.1f}' for freq in bands.tolist()])
             ax2.set_xlim(ax1.get_xlim())
             ax1.set_ylabel('Absorption Coefficient [-]')
             ax1.set_xlabel('Narrowband Frequency [Hz]')
@@ -770,7 +764,7 @@ class TMM:
             absorption_percentual = []
             #             for key, value in available_data.items():
             for i in range(len(bands)):
-                freq_bands.append(float(f'{bands[i, 1]:0.2f}'))
+                freq_bands.append(float(f'{bands[i]:0.2f}'))
                 absorption.append(float(f'{result[i]:0.2f}'))
                 absorption_percentual.append(float(f'{result[i] * 100:0.0f}'))
             data = {'Bands [Hz]': freq_bands, 'Absorption [-]': absorption, 'Absorption [%]': absorption_percentual}
@@ -784,7 +778,7 @@ class TMM:
                 print('IPython.diplay unavailable.')
 
         if returnValues:
-            return bands[:, 1], result
+            return bands, result
 
     def save2sheet(self, filename='TMM', timestamp=True, conversion=[0.0393701, '[inches]'],
                    ext='.xlsx', chart_styles=[35, 36], nthOct=3):
