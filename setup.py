@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-from setuptools import setup
-from glob import glob
 import setuptools
 
 with open("README.md", "r") as f:
