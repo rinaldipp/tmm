@@ -7,9 +7,11 @@
 *.mat
 *.pytta
 *.hdf5
+*.h5
 *.wav
 *.txt
 *.xlsx
+*.csv
 *.msh
 *.zip
 *.png

@@ -9,13 +9,11 @@ from scipy.interpolate import CubicSpline
 from scipy.signal import butter, freqz, savgol_filter
 import time
 import pytta
-try:
-    from tmm.database.path import path as database_path
-except:
-    from database.path import path as database_path
+from tmm import _h5utils as h5utils
+from tmm.database.path import path as database_path
 
-outputs = os.getcwd()
-style.use('seaborn-colorblind')
+outputs = os.getcwd() + os.sep
+style.use("seaborn-colorblind")
 
 
 class MaterialModel:
@@ -46,7 +44,7 @@ class MaterialModel:
         self.freq = np.linspace(self.fmin, self.fmax, int((self.fmax - self.fmin) / self.df) + 1)  # Freqeuency vector
         self.rho0 = rho0  # Air density [kg/m³]
         self.c0 = c0  # Speed of sound [m/s]
-        self.z = np.zeros_like(self.freq, dtype='complex')  # Complex impedance
+        self.z = np.zeros_like(self.freq, dtype="complex")  # Complex impedance
         self.s = None  # Scattering coefficient (if available)
         self.database = database_path()  # Folder path containing the GRAS database files
         self.project_folder = project_folder
@@ -91,7 +89,7 @@ class MaterialModel:
         admittance found from the measured absorption coefficient data using a spline fit.
         """
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_scene09_floor.csv', header=None).T
+        csvData = pandas.read_csv(self.database + "_csv" + os.sep + "mat_scene09_floor.csv", header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -100,8 +98,8 @@ class MaterialModel:
         YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
 
         # Interpolate to specific frequency list using a spline fit:
-        Yf = CubicSpline(fMeas, YsMeas, bc_type='natural')
-        Sf = CubicSpline(fMeas, sMeas, bc_type='natural')
+        Yf = CubicSpline(fMeas, YsMeas, bc_type="natural")
+        Sf = CubicSpline(fMeas, sMeas, bc_type="natural")
         YsInterp = Yf(self.freq)
         SsInterp = Sf(self.freq)
 
@@ -114,7 +112,7 @@ class MaterialModel:
         admittance found from the measured absorption coefficient data using a spline fit.
         """
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_scene09_ceiling.csv', header=None).T
+        csvData = pandas.read_csv(self.database + "_csv" + os.sep + "mat_scene09_ceiling.csv", header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -123,8 +121,8 @@ class MaterialModel:
         YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
 
         # Interpolate to specific frequency list using a spline fit:
-        Yf = CubicSpline(fMeas, YsMeas, bc_type='natural')
-        Sf = CubicSpline(fMeas, sMeas, bc_type='natural')
+        Yf = CubicSpline(fMeas, YsMeas, bc_type="natural")
+        Sf = CubicSpline(fMeas, sMeas, bc_type="natural")
         YsInterp = Yf(self.freq)
         SsInterp = Sf(self.freq)
 
@@ -137,7 +135,7 @@ class MaterialModel:
         admittance found from the measured absorption coefficient data using a spline fit.
         """
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_scene09_concrete.csv', header=None).T
+        csvData = pandas.read_csv(self.database + "_csv" + os.sep + "mat_scene09_concrete.csv", header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -146,8 +144,8 @@ class MaterialModel:
         YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
 
         # Interpolate to specific frequency list using a spline fit:
-        Yf = CubicSpline(fMeas, YsMeas, bc_type='natural')
-        Sf = CubicSpline(fMeas, sMeas, bc_type='natural')
+        Yf = CubicSpline(fMeas, YsMeas, bc_type="natural")
+        Sf = CubicSpline(fMeas, sMeas, bc_type="natural")
         YsInterp = Yf(self.freq)
         SsInterp = Sf(self.freq)
 
@@ -160,7 +158,7 @@ class MaterialModel:
         admittance found from the measured absorption coefficient data using a spline fit.
         """
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_scene09_plaster.csv', header=None).T
+        csvData = pandas.read_csv(self.database + "_csv" + os.sep + "mat_scene09_plaster.csv", header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -169,8 +167,8 @@ class MaterialModel:
         YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
 
         # Interpolate to specific frequency list using a spline fit:
-        Yf = CubicSpline(fMeas, YsMeas, bc_type='natural')
-        Sf = CubicSpline(fMeas, sMeas, bc_type='natural')
+        Yf = CubicSpline(fMeas, YsMeas, bc_type="natural")
+        Sf = CubicSpline(fMeas, sMeas, bc_type="natural")
         YsInterp = Yf(self.freq)
         SsInterp = Sf(self.freq)
 
@@ -183,7 +181,7 @@ class MaterialModel:
         admittance found from the measured absorption coefficient data using a spline fit.
         """
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_MDF25mmA_plane_00deg.csv', header=None).T
+        csvData = pandas.read_csv(self.database + "_csv" + os.sep + "mat_MDF25mmA_plane_00deg.csv", header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -192,8 +190,8 @@ class MaterialModel:
         YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
 
         # Interpolate to specific frequency list using a spline fit:
-        Yf = CubicSpline(fMeas, YsMeas, bc_type='natural')
-        Sf = CubicSpline(fMeas, sMeas, bc_type='natural')
+        Yf = CubicSpline(fMeas, YsMeas, bc_type="natural")
+        Sf = CubicSpline(fMeas, sMeas, bc_type="natural")
         YsInterp = Yf(self.freq)
         SsInterp = Sf(self.freq)
 
@@ -264,7 +262,7 @@ class MaterialModel:
         YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
 
         # Interpolate to specific frequency list using a spline fit:
-        Yf = CubicSpline(fMeas, YsMeas, bc_type='natural')
+        Yf = CubicSpline(fMeas, YsMeas, bc_type="natural")
         Ys1 = Yf(self.freq)
 
         # Model 2: reactive Mass-Spring-Damper fit to assumed fundamental panel resonance:
@@ -282,8 +280,8 @@ class MaterialModel:
 
         # Define Butterworth filters.
         # Note these are applied twice to make Linkwitz-Riley:
-        B_HP, A_HP = butter(8, CrossoverFrequency * 2 / SampleRate, 'high')
-        B_LP, A_LP = butter(8, CrossoverFrequency * 2 / SampleRate, 'low')
+        B_HP, A_HP = butter(8, CrossoverFrequency * 2 / SampleRate, "high")
+        B_LP, A_LP = butter(8, CrossoverFrequency * 2 / SampleRate, "low")
 
         # Non-linear crossover method of Aretz et al:
         Ys = np.abs(Ys2 * np.conj(freqz(B_LP, A_LP, self.freq, fs=SampleRate)[1]) ** 2) + \
@@ -336,7 +334,7 @@ class MaterialModel:
         # Model 1: purely resistive fit to provided third-octave-band absorption data:
 
         # Load the random incidence absorption coefficient data included in the GRAS database:
-        csvData = pandas.read_csv(self.database + '_csv' + os.sep + 'mat_scene09_windows.csv', header=None).T
+        csvData = pandas.read_csv(self.database + "_csv" + os.sep + "mat_scene09_windows.csv", header=None).T
         fMeas = csvData[0]  # Third-octave band center frequencies
         aMeas = csvData[1]  # Third-octave band center absorption coefficients
         sMeas = csvData[2]  # Third-octave band center scattering coefficients
@@ -345,8 +343,8 @@ class MaterialModel:
         YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
 
         # Interpolate to specific frequency list using a spline fit:
-        Yf = CubicSpline(fMeas, YsMeas, bc_type='natural')
-        Sf = CubicSpline(fMeas, sMeas, bc_type='natural')
+        Yf = CubicSpline(fMeas, YsMeas, bc_type="natural")
+        Sf = CubicSpline(fMeas, sMeas, bc_type="natural")
         Ys1 = Yf(self.freq)
         SsInterp = Sf(self.freq)
 
@@ -367,8 +365,8 @@ class MaterialModel:
 
         # Define Butterworth filters.
         # Note these are applied twice to make Linkwitz-Riley:
-        B_HP, A_HP = butter(8, CrossoverFrequency * 2 / SampleRate, 'high')
-        B_LP, A_LP = butter(8, CrossoverFrequency * 2 / SampleRate, 'low')
+        B_HP, A_HP = butter(8, CrossoverFrequency * 2 / SampleRate, "high")
+        B_LP, A_LP = butter(8, CrossoverFrequency * 2 / SampleRate, "low")
 
         # Non-linear crossover method of Aretz et al:
         Ys = np.abs(Ys2 * np.conj(freqz(B_LP, A_LP, self.freq, fs=SampleRate)[1]) ** 2) + \
@@ -412,29 +410,29 @@ class MaterialModel:
         # Plot
         if plot:
             fig, ax1 = plt.subplots(figsize=figsize)
-            ax1.semilogx(self.freq, self.alpha, label='Narrowband')
+            ax1.semilogx(self.freq, self.alpha, label="Narrowband")
             ax2 = ax1.twiny()
-            ax2.set_xscale('log')
-            ax1.semilogx(bands, result, 'o-', label=f'1/{nthOct} octave band')
+            ax2.set_xscale("log")
+            ax1.semilogx(bands, result, "o-", label=f"1/{nthOct} octave band")
             ax2.set_xticks([freq for freq in bands.tolist()])
-            ax2.set_xticklabels([f'{freq:0.1f}' for freq in bands.tolist()])
+            ax2.set_xticklabels([f"{freq:0.1f}" for freq in bands.tolist()])
             ax2.set_xlim(ax1.get_xlim())
-            ax1.set_ylabel('Absorption Coefficient [-]')
-            ax1.set_xlabel('Narrowband Frequency [Hz]')
-            ax2.set_xlabel(f'1/{nthOct} Octave Bands [Hz]')
+            ax1.set_ylabel("Absorption Coefficient [-]")
+            ax1.set_xlabel("Narrowband Frequency [Hz]")
+            ax2.set_xlabel(f"1/{nthOct} Octave Bands [Hz]")
             ax1.set_ylim([-0.1, 1.1])
-            ax1.legend(loc='best')
+            ax1.legend(loc="best")
             ax1.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
             ax1.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax1.tick_params(which='minor', length=5, rotation=-90,
-                            axis='x')  # Set major and minor ticks to same length
-            ax1.tick_params(which='major', length=5, rotation=-90,
-                            axis='x')  # Set major and minor ticks to same length
-            ax2.tick_params(which='major', length=5, rotation=-90,
-                            axis='x')  # Set major and minor ticks to same length
+            ax1.tick_params(which="minor", length=5, rotation=-90,
+                            axis="x")  # Set major and minor ticks to same length
+            ax1.tick_params(which="major", length=5, rotation=-90,
+                            axis="x")  # Set major and minor ticks to same length
+            ax2.tick_params(which="major", length=5, rotation=-90,
+                            axis="x")  # Set major and minor ticks to same length
             ax1.minorticks_on()  # Set major and minor ticks to same length
             ax2.minorticks_off()
-            ax1.grid('minor')
+            ax1.grid("minor")
             plt.show()
 
         if show:
@@ -444,50 +442,50 @@ class MaterialModel:
             absorption_percentual = []
             #             for key, value in available_data.items():
             for i in range(len(bands)):
-                freq_bands.append(float(f'{bands[i]:0.2f}'))
-                absorption.append(float(f'{result[i]:0.2f}'))
-                absorption_percentual.append(float(f'{result[i] * 100:0.0f}'))
-            data = {'Bands [Hz]': freq_bands, 'Absorption [-]': absorption, 'Absorption [%]': absorption_percentual}
-            df = pandas.DataFrame(data=data).set_index('Bands [Hz]').T
-            df = df.style.set_caption(f'1/{nthOct} Octave Absorption Data')
+                freq_bands.append(float(f"{bands[i]:0.2f}"))
+                absorption.append(float(f"{result[i]:0.2f}"))
+                absorption_percentual.append(float(f"{result[i] * 100:0.0f}"))
+            data = {"Bands [Hz]": freq_bands, "Absorption [-]": absorption, "Absorption [%]": absorption_percentual}
+            df = pandas.DataFrame(data=data).set_index("Bands [Hz]").T
+            df = df.style.set_caption(f"1/{nthOct} Octave Absorption Data")
 
             try:
                 from IPython.display import display
                 display(df)
             except:
-                print('IPython.diplay unavailable.')
+                print("IPython.diplay unavailable.")
 
         if returnValues:
             return bands, result
 
-    def save2sheet(self, filename='MaterialModel', timestamp=True, ext='.xlsx', chart_styles=[35, 36], nthOct=3):
+    def save2sheet(self, filename="MaterialModel", timestamp=True, ext=".xlsx", chart_styles=[35, 36], nthOct=3):
 
         timestr = time.strftime("%Y%m%d-%H%M_")
         if self.project_folder is None:
-            full_path = outputs + os.sep + filename + ext
+            full_path = outputs + filename + ext
             if timestamp is True:
-                full_path = outputs + os.sep + timestr + filename + ext
+                full_path = outputs + timestr + filename + ext
         else:
-            folderCheck = os.path.exists(self.project_folder + os.sep + 'Treatments')
+            folderCheck = os.path.exists(self.project_folder + os.sep + "Treatments")
             if folderCheck is False:
-                os.mkdir(self.project_folder + os.sep + 'Treatments')
-            full_path = self.project_folder + os.sep + 'Treatments' + os.sep + filename + ext
+                os.mkdir(self.project_folder + os.sep + "Treatments")
+            full_path = self.project_folder + os.sep + "Treatments" + os.sep + filename + ext
             if timestamp is True:
-                full_path = self.project_folder + os.sep + 'Treatments' + os.sep + timestr + filename + ext
+                full_path = self.project_folder + os.sep + "Treatments" + os.sep + timestr + filename + ext
 
-        if ext == '.xlsx':
+        if ext == ".xlsx":
             workbook = xlsxwriter.Workbook(full_path)
             worksheet = workbook.add_worksheet()
 
             # Setting formats
-            bold = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'center', 'border': 2})
-            regular = workbook.add_format({'bold': False, 'font_color': 'black', 'align': 'center', 'border': 1})
+            bold = workbook.add_format({"bold": True, "font_color": "black", "align": "center", "border": 2})
+            regular = workbook.add_format({"bold": False, "font_color": "black", "align": "center", "border": 1})
 
             # Adding frequency related data
-            worksheet.write(0, 0, 'Frequency', bold)
-            worksheet.write(0, 1, 'Real Z', bold)
-            worksheet.write(0, 2, 'Img Z', bold)
-            worksheet.write(0, 3, 'Absorption', bold)
+            worksheet.write(0, 0, "Frequency", bold)
+            worksheet.write(0, 1, "Real Z", bold)
+            worksheet.write(0, 2, "Img Z", bold)
+            worksheet.write(0, 3, "Absorption", bold)
             for i in range(len(self.freq)):
                 worksheet.write(1 + i, 0, self.freq[i], regular)
                 worksheet.write(1 + i, 1, np.real(self.z[i]), regular)
@@ -495,37 +493,37 @@ class MaterialModel:
                 worksheet.write(1 + i, 3, self.alpha[i], regular)
 
             # Absorption coefficient plot
-            chart_abs = workbook.add_chart({'type': 'line'})
-            chart_abs.add_series({'name': ['Sheet1', 0, 3],
-                                  'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
-                                  'values': ['Sheet1', 1, 3, len(self.freq) + 1, 3], })
-            chart_abs.set_title({'name': 'Absorption Coefficient'})
-            chart_abs.set_x_axis({'name': 'Frequency [Hz]'})
-            chart_abs.set_y_axis({'name': 'Alpha [-]'})
+            chart_abs = workbook.add_chart({"type": "line"})
+            chart_abs.add_series({"name": ["Sheet1", 0, 3],
+                                  "categories": ["Sheet1", 1, 0, len(self.freq) + 1, 0],
+                                  "values": ["Sheet1", 1, 3, len(self.freq) + 1, 3], })
+            chart_abs.set_title({"name": "Absorption Coefficient"})
+            chart_abs.set_x_axis({"name": "Frequency [Hz]"})
+            chart_abs.set_y_axis({"name": "Alpha [-]"})
             chart_abs.set_style(chart_styles[0])
-            worksheet.insert_chart('G1', chart_abs, {'x_offset': 0, 'y_offset': 0, 'x_scale': 1.334, 'y_scale': 1.11})
+            worksheet.insert_chart("G1", chart_abs, {"x_offset": 0, "y_offset": 0, "x_scale": 1.334, "y_scale": 1.11})
 
             # Impedance plot
-            chart_z = workbook.add_chart({'type': 'line'})
-            chart_z.add_series({'name': ['Sheet1', 0, 1],
-                                'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
-                                'values': ['Sheet1', 1, 1, len(self.freq) + 1, 1], })
-            chart_z.add_series({'name': ['Sheet1', 0, 2],
-                                'categories': ['Sheet1', 1, 0, len(self.freq) + 1, 0],
-                                'values': ['Sheet1', 1, 2, len(self.freq) + 1, 2], })
-            chart_z.set_title({'name': 'Normalized Surface Impedance'})
-            chart_z.set_x_axis({'name': 'Frequency [Hz]'})
-            chart_z.set_y_axis({'name': 'Z [Pa*s/m]'})
+            chart_z = workbook.add_chart({"type": "line"})
+            chart_z.add_series({"name": ["Sheet1", 0, 1],
+                                "categories": ["Sheet1", 1, 0, len(self.freq) + 1, 0],
+                                "values": ["Sheet1", 1, 1, len(self.freq) + 1, 1], })
+            chart_z.add_series({"name": ["Sheet1", 0, 2],
+                                "categories": ["Sheet1", 1, 0, len(self.freq) + 1, 0],
+                                "values": ["Sheet1", 1, 2, len(self.freq) + 1, 2], })
+            chart_z.set_title({"name": "Normalized Surface Impedance"})
+            chart_z.set_x_axis({"name": "Frequency [Hz]"})
+            chart_z.set_y_axis({"name": "Z [Pa*s/m]"})
             chart_z.set_style(chart_styles[1])
-            worksheet.insert_chart('G17', chart_z, {'x_offset': 0, 'y_offset': 0, 'x_scale': 1.334, 'y_scale': 1.11})
+            worksheet.insert_chart("G17", chart_z, {"x_offset": 0, "y_offset": 0, "x_scale": 1.334, "y_scale": 1.11})
 
             # Adding nthOct band absorption coeffiecients
             line = 0
             idx = 4
-            worksheet.merge_range(line, idx, line, idx + 1, f'1/{nthOct} octave band absorption coefficients', bold)
+            worksheet.merge_range(line, idx, line, idx + 1, f"1/{nthOct} octave band absorption coefficients", bold)
             line += 1
-            worksheet.write(line, idx, 'Frequency Band [Hz]', bold)
-            worksheet.write(line, idx + 1, 'Absorption Coeffiecient [-]', bold)
+            worksheet.write(line, idx, "Frequency Band [Hz]", bold)
+            worksheet.write(line, idx + 1, "Absorption Coeffiecient [-]", bold)
             line += 1
             xOct, yOct = self.filter_alpha(nthOct=nthOct, plot=False, returnValues=True)
             for x, y in zip(xOct, yOct):
@@ -534,31 +532,71 @@ class MaterialModel:
                 line += 1
 
             # Setting column widths
-            worksheet.set_column('A:D', 12)
-            worksheet.set_column('E:F', 28)
+            worksheet.set_column("A:D", 12)
+            worksheet.set_column("E:F", 28)
 
             workbook.close()
 
-        elif ext == '.csv':
+        elif ext == ".csv":
             df1 = pandas.DataFrame()
-            df1['Frequency'] = self.freq
-            df1['Real Z'] = np.real(self.z)
-            df1['Imag Z'] = np.imag(self.z)
-            df1['Absorption'] = self.alpha
+            df1["Frequency"] = self.freq
+            df1["Real Z"] = np.real(self.z)
+            df1["Imag Z"] = np.imag(self.z)
+            df1["Absorption"] = self.alpha
             df2 = pandas.DataFrame()
-            df2['Bands'], df2[f'1/{nthOct} octave band absorption coefficients'] = self.filter_alpha(nthOct=nthOct,
+            df2["Bands"], df2[f"1/{nthOct} octave band absorption coefficients"] = self.filter_alpha(nthOct=nthOct,
                                                                                                      returnValues=True,
                                                                                                      plot=False)
             df3 = pandas.concat([df1, df2], axis=1)
-            df3.to_csv(full_path, index=False, float_format='%.3f', sep=';')
+            df3.to_csv(full_path, index=False, float_format="%.3f", sep=";")
 
         else:
             raise NameError("Unidentified extension. Available extensions: ['.xlsx', '.csv']")
 
-        print(f'Sheet saved to ', full_path)
+        print(f"Sheet saved to ", full_path)
 
-    def plot(self, figsize=(15, 5), plots=['z', 'y', 'alpha'], saveFig=False, filename='TMM', timestamp=True,
-             ext='.png'):
+    def save(self, filename="mm"):
+        """
+        Saves TMM into HDF5 file.
+
+        Parameters
+        ----------
+        filename : string
+            Output filename.
+
+        Returns
+        -------
+        Nothing.
+        """
+        if self.project_folder:
+            h5utils.save_class_to_hdf5(self, filename=filename, folder=self.project_folder)
+            print("HDF5 file saved at " + self.project_folder + filename + ".h5")
+        else:
+            h5utils.save_class_to_hdf5(self, filename=filename, folder=outputs)
+            print("HDF5 file saved at " + filename + ".h5")
+
+    def load(self, filename):
+        """
+        Loads TMM data from HDF5 file.
+
+        Parameters
+        ----------
+        filename : string
+            Input filename.
+
+        Returns
+        -------
+        Nothing.
+        """
+        if self.project_folder:
+            h5utils.load_class_from_hdf5(self, filename, folder=self.project_folder)
+            print(self.project_folder + filename + ".h5 loaded successfully.")
+        else:
+            h5utils.load_class_from_hdf5(self, filename)
+            print(filename + ".h5 loaded successfully.")
+
+    def plot(self, figsize=(15, 5), plots=["z", "y", "alpha"], saveFig=False, filename="TMM", timestamp=True,
+             ext=".png"):
         """
         Plots impedance, admittance and absorption curves.
 
@@ -589,78 +627,78 @@ class MaterialModel:
         gs = gridspec.GridSpec(1, len(plots))
 
         i = 0
-        if 'z' in plots or 'Z' in plots:
+        if "z" in plots or "Z" in plots:
             ax_z = plt.subplot(gs[0, i])
-            ax_z.set_title(r'Impedance ($Z$)')
-            ax_z.set_xlabel('Frequency [Hz]')
-            ax_z.set_ylabel('Normalized Surface Impedance [Z/Z0]')
-            ax_z.semilogx(self.freq, np.real(self.z), linewidth=2, label='Real')
-            ax_z.semilogx(self.freq, np.imag(self.z), linewidth=2, label='Real')
+            ax_z.set_title(r"Impedance ($Z$)")
+            ax_z.set_xlabel("Frequency [Hz]")
+            ax_z.set_ylabel("Normalized Surface Impedance [Z/Z0]")
+            ax_z.semilogx(self.freq, np.real(self.z), linewidth=2, label="Real")
+            ax_z.semilogx(self.freq, np.imag(self.z), linewidth=2, label="Real")
             ax_z.set_xlim([(np.min(self.freq)), (np.max(self.freq))])
-            ax_z.axhline(y=0, color='k', linewidth=0.5)
-            ax_z.axhline(y=1, linestyle='--', color='gray')
-            ax_z.legend(loc='best')
+            ax_z.axhline(y=0, color="k", linewidth=0.5)
+            ax_z.axhline(y=1, linestyle="--", color="gray")
+            ax_z.legend(loc="best")
             ax_z.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
             ax_z.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax_z.tick_params(which='minor', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
-            ax_z.tick_params(which='major', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
+            ax_z.tick_params(which="minor", length=5, rotation=-90,
+                             axis="x")  # Set major and minor ticks to same length
+            ax_z.tick_params(which="major", length=5, rotation=-90,
+                             axis="x")  # Set major and minor ticks to same length
             ax_z.minorticks_on()  # Set major and minor ticks to same length
-            ax_z.grid('minor')
+            ax_z.grid("minor")
             i += 1
 
-        if 'y' in plots or 'Y' in plots:
+        if "y" in plots or "Y" in plots:
             ax_y = plt.subplot(gs[0, i])
-            ax_y.set_title(r'Admittance ($Y$)')
-            ax_y.set_xlabel('Frequency [Hz]')
-            ax_y.set_ylabel('Normalized Surface Admittance [Z0/Z]')
-            ax_y.semilogx(self.freq, np.real(self.y), linewidth=2, label='Real')
-            ax_y.semilogx(self.freq, np.imag(self.y), linewidth=2, label='Imag')
+            ax_y.set_title(r"Admittance ($Y$)")
+            ax_y.set_xlabel("Frequency [Hz]")
+            ax_y.set_ylabel("Normalized Surface Admittance [Z0/Z]")
+            ax_y.semilogx(self.freq, np.real(self.y), linewidth=2, label="Real")
+            ax_y.semilogx(self.freq, np.imag(self.y), linewidth=2, label="Imag")
             ax_y.set_xlim([(np.min(self.freq)), (np.max(self.freq))])
-            ax_y.legend(loc='best')
+            ax_y.legend(loc="best")
             ax_y.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
             ax_y.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax_y.tick_params(which='minor', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
-            ax_y.tick_params(which='major', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
+            ax_y.tick_params(which="minor", length=5, rotation=-90,
+                             axis="x")  # Set major and minor ticks to same length
+            ax_y.tick_params(which="major", length=5, rotation=-90,
+                             axis="x")  # Set major and minor ticks to same length
             ax_y.minorticks_on()  # Set major and minor ticks to same length
-            ax_y.grid('minor')
+            ax_y.grid("minor")
             i += 1
 
-        if 'alpha' in plots or 'abs' in plots or 'scattering' in plots or 'scat' in plots or 's' in plots:
+        if "alpha" in plots or "abs" in plots or "scattering" in plots or "scat" in plots or "s" in plots:
             ax_a = plt.subplot(gs[0, i])
-            ax_a.set_xlabel('Frequency [Hz]')
-            ax_a.set_ylabel('Coefficient [-]')
+            ax_a.set_xlabel("Frequency [Hz]")
+            ax_a.set_ylabel("Coefficient [-]")
             alpha = False
             scat = False
-            if 'alpha' in plots or 'abs' in plots:
-                ax_a.semilogx(self.freq, self.alpha, linewidth=2, label='Absorption')
+            if "alpha" in plots or "abs" in plots:
+                ax_a.semilogx(self.freq, self.alpha, linewidth=2, label="Absorption")
                 alpha = True
             if self.s is not None:
-                if 'scattering' in plots or 'scat' in plots or 's' in plots:
-                    ax_a.semilogx(self.freq, self.s, linewidth=2, label='Scattering')
+                if "scattering" in plots or "scat" in plots or "s" in plots:
+                    ax_a.semilogx(self.freq, self.s, linewidth=2, label="Scattering")
                     scat = True
             if alpha:
-                ax_a.set_title(r'Absorption Coefficient ($\alpha$)')
+                ax_a.set_title(r"Absorption Coefficient ($\alpha$)")
             if scat:
-                ax_a.set_title(r'Scattering Coefficient')
+                ax_a.set_title(r"Scattering Coefficient")
             if alpha and scat:
-                ax_a.set_title(r'Absorption Coefficient & Scattering Coefficients')
+                ax_a.set_title(r"Absorption Coefficient & Scattering Coefficients")
             ax_a.set_xlim([(np.min(self.freq)), (np.max(self.freq))])
             ax_a.set_ylim([-0.1, 1.1])
-            ax_a.legend(loc='best')
-            ax_a.axhline(y=0, color='k', linewidth=0.5)
-            ax_a.axhline(y=1, linestyle='--', color='gray')
+            ax_a.legend(loc="best")
+            ax_a.axhline(y=0, color="k", linewidth=0.5)
+            ax_a.axhline(y=1, linestyle="--", color="gray")
             ax_a.get_xaxis().set_major_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
             ax_a.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())  # Remove scientific notation from xaxis
-            ax_a.tick_params(which='minor', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
-            ax_a.tick_params(which='major', length=5, rotation=-90,
-                             axis='x')  # Set major and minor ticks to same length
+            ax_a.tick_params(which="minor", length=5, rotation=-90,
+                             axis="x")  # Set major and minor ticks to same length
+            ax_a.tick_params(which="major", length=5, rotation=-90,
+                             axis="x")  # Set major and minor ticks to same length
             ax_a.minorticks_on()  # Set major and minor ticks to same length
-            ax_a.grid('minor')
+            ax_a.grid("minor")
             i += 1
 
         gs.tight_layout(fig, pad=4, w_pad=1, h_pad=1)
@@ -668,35 +706,18 @@ class MaterialModel:
         if saveFig:
             timestr = time.strftime("%Y%m%d-%H%M_")
             if self.project_folder is None:
-                full_path = outputs + os.sep + filename + ext
+                full_path = outputs + filename + ext
                 if timestamp is True:
-                    full_path = outputs + os.sep + timestr + filename + ext
+                    full_path = outputs + timestr + filename + ext
             else:
-                folderCheck = os.path.exists(self.project_folder + os.sep + 'Treatments')
+                folderCheck = os.path.exists(self.project_folder + os.sep + "Treatments")
                 if folderCheck is False:
-                    os.mkdir(self.project_folder + os.sep + 'Treatments')
-                full_path = self.project_folder + os.sep + 'Treatments' + os.sep + filename + ext
+                    os.mkdir(self.project_folder + os.sep + "Treatments")
+                full_path = self.project_folder + os.sep + "Treatments" + os.sep + filename + ext
                 if timestamp is True:
-                    full_path = self.project_folder + os.sep + 'Treatments' + os.sep + timestr + filename + ext
+                    full_path = self.project_folder + os.sep + "Treatments" + os.sep + timestr + filename + ext
 
             plt.savefig(full_path, dpi=100)
-            print('Image saved to ', full_path)
+            print("Image saved to ", full_path)
         plt.show()
 
-
-if __name__ == '__main__':
-
-    from material_model import MaterialModel
-
-    # Define the frequency range, resolution and project parameters
-    mm = MaterialModel(fmin=20, fmax=5000, df=1, c0=343, rho0=1.21)
-
-    # Choose the material
-    mm.door()
-    mm.plot(figsize=(7, 5), plots=['alpha'], saveFig=True, filename='example_door', timestamp=False)
-    mm.save2sheet(timestamp=False, filename='example_door', nthOct=1)
-    bands, filtered_alpha = mm.filter_alpha(figsize=(7, 5),
-                                            plot='available',
-                                            show=True,
-                                            nthOct=1,
-                                            returnValues=True)
