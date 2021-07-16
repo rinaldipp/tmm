@@ -41,7 +41,6 @@ class MaterialModel:
         self.fmin = fmin
         self.fmax = fmax
         self.df = df  # Frequency resolution
-        self.freq = np.linspace(self.fmin, self.fmax, int((self.fmax - self.fmin) / self.df) + 1)  # Freqeuency vector
         self.rho0 = rho0  # Air density [kg/m³]
         self.c0 = c0  # Speed of sound [m/s]
         self.z = np.zeros_like(self.freq, dtype="complex")  # Complex impedance
@@ -50,9 +49,12 @@ class MaterialModel:
         self.project_folder = project_folder
 
     @property
+    def freq(self):
+        return np.linspace(self.fmin, self.fmax, int((self.fmax - self.fmin) / self.df) + 1)
+
+    @property
     def z0(self):
         return 1
-        # return self.rho0 * self.c0
 
     @property
     def alpha(self):

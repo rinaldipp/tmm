@@ -45,7 +45,6 @@ class TMM:
         self.fmin = fmin
         self.fmax = fmax
         self.df = df
-        self.freq = np.linspace(self.fmin, self.fmax, int((self.fmax - self.fmin) / self.df) + 1)
         self.z = np.zeros_like(self.freq, dtype="complex")
         self.z_normal = None  # Only used for plotting when incidence == "diffuse"
         self.s0 = 1  # Device front termination area
@@ -61,6 +60,10 @@ class TMM:
             self.incidence_angle = np.linspace(0, 1, 1)
         elif self.incidence == "angle":
             self.incidence_angle = np.linspace(incidence_angle[0], incidence_angle[0] + 1, 1)
+
+    @property
+    def freq(self):
+        return np.linspace(self.fmin, self.fmax, int((self.fmax - self.fmin) / self.df) + 1)
 
     @property
     def rho0(self):
