@@ -1,3 +1,10 @@
+""""
+Data saving module.
+
+This module receives organized raw data and saves it to HDF5 files through its functions.
+
+For further information check the function specific documentation.
+"""
 import numpy as np
 import time
 import h5py
@@ -15,10 +22,6 @@ def save_dict_to_hdf5(dic, key, h5file):
         Dictionary key.
     h5file : h5py.File
         Output .h5 file that is already open.
-
-    Returns
-    -------
-    Nothing.
     """
     recursively_save_dict_contents_to_group(h5file, key + '/', dic)
 
@@ -35,10 +38,6 @@ def recursively_save_dict_contents_to_group(h5file, path, dic):
         h5 group path.
     dic : dictionary
         Python dictionary that will be saved into the h5 file.
-
-    Returns
-    -------
-    Nothing.
     """
     for key, item in dic.items():
         if isinstance(item, dict):
@@ -64,8 +63,7 @@ def load_dict_from_hdf5(h5file, key):
 
     Returns
     -------
-    recursively_load_dict_contents_from_group : dictionary
-        Dictionary that can contain other dictionaries inside.
+    Dictionary that can contain other dictionaries inside.
     """
     return recursively_load_dict_contents_from_group(h5file, key + '/')
 
@@ -83,8 +81,7 @@ def recursively_load_dict_contents_from_group(h5file, path):
 
     Returns
     -------
-    ans : dictionary
-        Dictionary containing the values inside the h5 group.
+    Dictionary containing the values inside the h5 group.
     """
     ans = {}
     for key, item in h5file[path].items():
@@ -110,16 +107,20 @@ def parse_dataset_item(item):
 
     Returns
     -------
-    item : array, string, None, int, float or bool
-        Parsed dataset.
+    Parsed dataset.
     """
     item = np.array(item, dtype=item.dtype)
     if item.dtype == 'object':
         item = item.tolist().decode('UTF-8')
         if item == 'None':
             item = None
+    elif isinstance(item, list):
+        item = item.decode('UTF-8')
     elif np.issubdtype(item.dtype, np.integer):
-        item = int(item)
+        if item.size == 1:
+            item = int(item)
+        else:
+            item = item.tolist()
     elif np.issubdtype(item.dtype, np.float) and item.shape == ():
         item = float(item)
     elif np.issubdtype(item.dtype, np.bool):
@@ -143,10 +144,6 @@ def save_class_to_hdf5(self, filename='class', ext='.h5', folder=None, timestamp
         Output folder. If 'None' is passed the current folder is used.
     timestamp : bool, optional
         Boolean to apply timestamping to the output filename.
-
-    Returns
-    -------
-    Nothing.
     """
     timestr = time.strftime("%Y%m%d-%H%M_")
 
@@ -185,10 +182,6 @@ def load_class_from_hdf5(self, filename, ext='.h5', folder=None):
         Input extension.
     folder : None or string, optional
         Input folder. If 'None' is passed the current folder is used.
-
-    Returns
-    -------
-    Nothing.
     """
     if folder is not None:
         infile = folder + filename + ext

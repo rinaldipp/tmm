@@ -5,7 +5,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="tmm",
-    version="0.0.1",
+    version="0.0.2",
     author="Rinaldi Polese Petrolli",
     author_email="rinaldipp@gmail.com",
     description="TMM for modeling acoustic treatments",
