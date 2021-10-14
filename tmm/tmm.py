@@ -59,7 +59,7 @@ class TMM:
         self._df = df
         self._s0 = 1
         self._srad = 1
-        self._air_prop = utils.air_properties()
+        self._air_prop = utils.AirProperties().standardized_c0_rho0()
         self._incidence = incidence
         self._incidence_angle = incidence_angle
         self._z = None

@@ -9,13 +9,9 @@ if __name__ == "__main__":
                     )
 
     # Define the layers - from top to bottom
-    # treatment.perforated_panel_layer(t=19, d=8, s=24, method="barrier")
-    # treatment.porous_layer(model="mac", t=50, sigma=27)
-    # treatment.air_layer(t=50)
-
-    treatment.perforated_panel_layer(t=19, d=8, s=32, method="barrier")
-    treatment.porous_layer(model="mac", t=88, sigma=4)
-    # treatment.air_layer(t=323)
+    treatment.perforated_panel_layer(t=19, d=8, s=24, method="barrier")
+    treatment.porous_layer(model="mac", t=50, sigma=27)
+    treatment.air_layer(t=50)
 
     # Compute, plot and export data
     treatment.compute(rigid_backing=True, show_layers=True)

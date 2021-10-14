@@ -11,8 +11,6 @@ if __name__ == "__main__":
     treatment.porous_layer(model="mac", t=50, sigma=27)
     treatment.air_layer(t=50)
 
-    # treatment.material_model(type="plaster")
-
     # Compute, plot and export data
     treatment.compute(show_layers=False, rigid_backing=True)
     treatment.save()

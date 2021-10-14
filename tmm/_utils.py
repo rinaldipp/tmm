@@ -6,55 +6,121 @@ For further information check the function specific documentation.
 import numpy as np
 
 
-def air_properties(t0=20, p0=101320, rh=30):
+class AirProperties:
     """
     Computes properties of humid air.
-
-    Parameters
-    ----------
-    t0 : float or int, optional
-        Temperature in Celsius [C]
-    p0 : float or int, optional
-        Atmospheric pressure in Pascal [Pa]
-    rh : float or int, optional
-        Relative humidity in percentage [%]
-
-    Returns
-    -------
-    Dictionary containing the following air properties:
-      - rho0: volume density [kg/m³]
-      - c0: sound speed [m/s]
-      - vis: absolute (or dynamic) viscosity [Ns/m²]
-      - gam: specific heat ratio [-]
-      - pn: Prandtl number [-]
-      - Cp: Constant Pressure Specific Heat [J/kg*K]
     """
+    def __init__(self, c0=None, rho0=None, t0=20.0, rh=30.0, p0=101325.0):
+        """
+        Parameters
+        ----------
+        c0 : float, optional
+            Speed of sound [m/s] in air
+        rho0 : float, optional
+            Air volume density [kg/m³]
+        t0 : float or int, optional
+            Temperature in Celsius [C]
+        rh : float, optional
+            Relative humidity in percentage [%]
+        p0 : float, optional
+            Atmospheric pressure in Pascal [Pa]
+        """
+        self.t0 = np.array(t0, dtype=np.float32)
+        self.rh = np.array(rh, dtype=np.float32)
+        self.p0 = np.array(p0, dtype=np.float32)
 
-    kappla = 0.026  # Air thermal conductivity [W/m*k]
-    t = t0 + 273.16  # Temperature in Kelvin
-    R = 287.031  # Gas constant for air [J/K/kg]
-    Rvp = 461.521  # Gas constant for water vapor [J/K/kg]
-    Pvp = 0.0658 * t ** 3 - 53.7558 * t ** 2 + 14703.8127 * t - 1345485.0465  # Pierce(Acoustics, 1991) page 555
-    vis = 7.72488e-8 * t - 5.95238e-11 * t ** 2 + 2.71368e-14 * t ** 3
-    Cp = 4168.8 * (0.249679 - 7.55179e-5 * t + 1.69194e-7 * t ** 2 - 6.46128e-11 * t ** 3)
-    Cv = Cp - R  # Constant Volume Specific Heat [J/kg/K] for 260 K < T < 600 K
-    pn = vis * Cp / kappla  # Prandtl number (fewly varies at typical air conditions (0°C=0.715; 60°C=0.709)
-    gam = Cp / Cv  # Specific heat ratio [-]
-    rho0 = p0 / (R * t) - (1 / R - 1 / Rvp) * rh / 100 * Pvp / t  # Density of air [kg/m³]
-    c0 = (gam * p0 / rho0) ** 0.5
+    @property
+    def temp_kelvin(self):
+        """Returns temperature in Kelvins."""
+        return self.t0 + 273.16
 
-    air_properties_dict = {"temperature_in_celsius": t0,
-                           "relative_humidity": rh,
-                           "atmospheric_pressure": p0,
-                           "prandtl_number": pn,
-                           "specific_heat_ratio": gam,
-                           "air_density": rho0,
-                           "speed_of_sound": c0,
-                           "air_viscosity": vis,
-                           "air_thermal_conductivity": kappla,
-                           "constant_pressure_specific_heat": Cp}
+    @property
+    def rho0(self):
+        return self.standardized_c0_rho0()["air_density"]
 
-    return air_properties_dict
+    @property
+    def c0(self):
+        return self.standardized_c0_rho0()["speed_of_sound"]
+
+    @property
+    def viscosity(self):
+        return self.standardized_c0_rho0()["air_viscosity"]
+
+    def standardized_c0_rho0(self):
+        """
+        This method is used to calculate the standardized value of the sound speed and air density based on measurements
+        of temperature, humidity and atmospheric pressure. It will overwrite the user supplied values.
+        """
+        # Constants
+        r = 287.031  # Gas constant for air [J/K/kg]
+        rvp = 461.521  # Gas constant for water vapor [J/K/kg]
+        kappla = 0.026  # Air thermal conductivity [W/m*k]
+        # pvp from Pierce Acoustics 1955 - pag. 555
+        pvp = (0.0658 * self.temp_kelvin ** 3 - 53.7558 * self.temp_kelvin ** 2
+               + 14703.8127 * self.temp_kelvin - 1345485.0465)
+        # Constant pressure specific heat
+        cp = 4168.8 * (0.249679 - 7.55179e-5 * self.temp_kelvin + 1.69194e-7 * self.temp_kelvin ** 2
+                       - 6.46128e-11 * self.temp_kelvin ** 3)
+        # Constant volume specific heat [J/kg/K] for 260 K < T < 600 K
+        cv = cp - r
+        # Specific heat constant ratio
+        gam = cp / cv
+        # Air viscosity
+        viscosity = (7.72488e-8 * self.temp_kelvin - 5.95238e-11 * self.temp_kelvin ** 2
+                          + 2.71368e-14 * self.temp_kelvin ** 3)
+        # Prandtl number (fewly varies at typical air conditions (0°C=0.715; 60°C=0.709)
+        pn = viscosity * cp / kappla
+        # Air density [kg/m³]
+        rho0 = self.p0 / (r * self.temp_kelvin) - (1 / r - 1 / rvp) * self.rh / 100 * pvp / self.temp_kelvin
+        # Air sound speed [m/s]
+        c0 = (gam * self.p0 / rho0) ** 0.5
+
+        prop_dict = {"temperature_in_celsius": self.t0,
+                     "relative_humidity": self.rh,
+                     "atmospheric_pressure": self.p0,
+                     "air_density": rho0,
+                     "speed_of_sound": c0,
+                     "air_viscosity": viscosity,
+                     "prandtl_number": pn,
+                     "specific_heat_ratio": gam,
+                     "air_thermal_conductivity": kappla,
+                     "constant_pressure_specific_heat": cp}
+        return prop_dict
+
+    def air_absorption(self, freq):
+        """
+        Calculates the air absorption coefficient in [m^-1].
+
+        Parameters
+        ----------
+        freq : array
+            Array of frequencies.
+
+        Returns
+        ----------
+        Array of air absorption values.
+        """
+        t_0 = 293.15  # Reference temperature [k]
+        t_01 = 273.15  # 0 [C] in [k]
+        patm_atm = self.p0 / 101325  # Atmospheric pressure [atm]
+        f = freq / patm_atm  # Relative frequency
+        # Saturation pressure
+        psat = patm_atm * 10 ** (-6.8346 * (t_01 / self.temp_kelvin) ** 1.261 + 4.6151)
+        h = patm_atm * self.rh * (psat / patm_atm)
+        # Oxygen gas molecule (N2) relaxation frequency
+        f_rO = 1/patm_atm * (24 + 4.04 * 10**4 * h * (0.02 + h) / (0.391 + h))
+        # Nytrogen gas molecule (N2) relaxation frequency
+        f_rn = (1 / patm_atm * (t_0 / self.temp_kelvin) ** (1 / 2)
+                * (9 + 280 * h * np.exp(-4.17 * ((t_0 / self.temp_kelvin) ** (1 / 3) - 1))))
+        # Air absorption in [dB/m]
+        alpha_ps = (100 * f ** 2 / patm_atm * (1.84 * 10 ** (-11) * (self.temp_kelvin / t_0) ** (1 / 2)
+                                               + (self.temp_kelvin / t_0) ** (-5 / 2)
+                                               * (0.01278 * np.exp(-2239.1 / self.temp_kelvin) / (f_rO + f ** 2 / f_rO)
+                                                  + 0.1068 * np.exp(-3352 / self.temp_kelvin) / (f_rn + f**2 / f_rn))))
+        a_ps_ar = alpha_ps * 20 / np.log(10)
+        # Air absorption in [1/m]
+        m = (1/100) * a_ps_ar * patm_atm / (10 * np.log10(np.exp(1)))
+        return m
 
 
 def find_nearest(array, value):
