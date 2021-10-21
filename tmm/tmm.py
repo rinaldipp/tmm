@@ -510,7 +510,7 @@ class TMM:
                               "matrix": Tm,
                               }
 
-    def perforated_panel_layer(self, t=19, d=8, s=16, end_correction="jb", method="barrier", layer=None):
+    def perforated_panel_layer(self, t=19, d=8, s=16, rho=None, end_correction="jb", method="barrier", layer=None):
         """
         Adds a plate with circular perforations to the existing device.
 
@@ -522,6 +522,8 @@ class TMM:
             Hole diameter [mm]
         s : float or int, optional
             Hole spacing from the center of one hole to the next [mm]
+        rho : float, int or None, optional
+            Plate density [kg/m3] - if 'None' is passed than a fully rigid plate is assumed.
         end_correction : string, optional
             Chooses between the available end corrections for the tube length.
         method : string, optional
@@ -564,6 +566,9 @@ class TMM:
             rm = (self.rho0 / open_area) * np.sqrt(8 * vis * self.w0) * (
                         1 + t_meters / (d_meters))  # Surface resistance
             zpp = (1j / open_area) * t_corr * self.w0 * self.rho0 + rm  # Impedance of perforated plate
+            if rho:
+                mip = 1j * self.w0 * rho * t_meters * (1 - open_area) / self.s0  # Mass impedance of the plate
+                zpp = 1 / (1 / zpp + 1 / mip)
             zpp = matlib.repmat(zpp, len(self.incidence_angle), 1).T
 
             ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
@@ -586,6 +591,9 @@ class TMM:
             m = self.rho0 * t_meters / open_area * km
 
             zpp = rm + 1j * self.w0 * m
+            if rho:
+                mip = 1j * self.w0 * rho * t_meters * (1 - open_area) / self.s0  # Mass impedance of the plate
+                zpp = 1 / (1 / zpp + 1 / mip)
             zpp = matlib.repmat(zpp, len(self.incidence_angle), 1).T
 
             ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
@@ -599,7 +607,6 @@ class TMM:
             Impedance calculated through Zwikker and Kosten's viscothermal model.
             """
             kc, zc = self.viscothermal_circular(d_meters, open_area)
-
             kc = matlib.repmat(kc, len(self.incidence_angle), 1).T
             zc = matlib.repmat(zc, len(self.incidence_angle), 1).T
 
