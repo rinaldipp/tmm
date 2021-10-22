@@ -10,7 +10,7 @@ class AirProperties:
     """
     Computes properties of humid air.
     """
-    def __init__(self, c0=None, rho0=None, t0=20.0, rh=30.0, p0=101325.0):
+    def __init__(self, t0=20.0, rh=30.0, p0=101325.0):
         """
         Parameters
         ----------
@@ -36,14 +36,22 @@ class AirProperties:
 
     @property
     def rho0(self):
+        """Return air density."""
         return self.standardized_c0_rho0()["air_density"]
 
     @property
     def c0(self):
+        """Return speed of sound in air."""
         return self.standardized_c0_rho0()["speed_of_sound"]
 
     @property
+    def z0(self):
+        """Return characteristic impedance of air."""
+        return self.rho0 * self.c0
+
+    @property
     def viscosity(self):
+        """Return air viscosity."""
         return self.standardized_c0_rho0()["air_viscosity"]
 
     def standardized_c0_rho0(self):
