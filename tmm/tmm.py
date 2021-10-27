@@ -444,6 +444,8 @@ class TMM:
                               "flow_resistivity [k*Pa*s/m²]": sigma,
                               "thickness [mm]": t,
                               "model": model,
+                              # "kc": kc,
+                              # "zc": zc,
                               "matrix": Tp,
                               }
 

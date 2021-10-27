@@ -14,7 +14,7 @@ from tmm import _utils as utils
 style.use("seaborn-colorblind")
 
 
-def save_matplotlib_fig(filename, project_folder, timestamp=False, subfolder="", ext=".png", **kwargs):
+def save_matplotlib_fig(fig, filename, project_folder, timestamp=False, subfolder="", ext=".png", **kwargs):
     """
     Save Matplotlib figure to a static image file.
 
@@ -50,7 +50,7 @@ def save_matplotlib_fig(filename, project_folder, timestamp=False, subfolder="",
     if "bbox_inches" not in kwargs:
         kwargs["bbox_inches"] = "tight"
 
-    plt.savefig(full_path, **kwargs)
+    fig.savefig(full_path, **kwargs)
     print("Image saved to ", full_path)
 
 
@@ -154,7 +154,7 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                     ax[i] = plt.subplot(gs[i, 0])
                 elif orientation == "horizontal":
                     ax[i] = plt.subplot(gs[0, i])
-            ax[i].set_title(r"Absorption Coefficient ($\alpha$)", fontsize=base_fontsize)
+            ax[i].set_title(r"Absorption Coefficient ($\alpha$)", fontsize=base_fontsize, loc="left")
             ax[i].set_ylabel(r"$\alpha$ [-]", fontsize=base_fontsize - 1)
             if show_incidence:
                 if tmm.incidence == "diffuse" and "material_model" not in tmm.filename:
@@ -223,7 +223,7 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
         project_folder = project_folder if project_folder is not None else os.getcwd()
         if "subfolder" not in kwargs:
             kwargs["subfolder"] = "Treatments"
-        save_matplotlib_fig(filename, project_folder, **kwargs)
+        save_matplotlib_fig(fig, filename, project_folder, **kwargs)
 
     return fig, ax, gs
 
@@ -305,7 +305,7 @@ def oct_filter(narrowbad_freq, narrowband_value, freq_bands, filtered_value, n_o
         project_folder = project_folder if project_folder is not None else os.getcwd()
         if "subfolder" not in kwargs:
             kwargs["subfolder"] = "Treatments"
-        save_matplotlib_fig(filename, project_folder, **kwargs)
+        save_matplotlib_fig(fig, filename, project_folder, **kwargs)
 
     return fig, [ax1, ax2]
 
