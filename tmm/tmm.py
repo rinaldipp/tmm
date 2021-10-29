@@ -624,11 +624,12 @@ class TMM:
                               "hole_spacing [mm]": s,
                               "open_area [%]": open_area * 100,
                               "end_correction": end_correction,
+                              "rho [kg/m3]": rho,
                               "method": method,
                               "matrix": Tp,
                               }
 
-    def slotted_panel_layer(self, t=19, w=8, s=16, method="barrier", layer=None):
+    def slotted_panel_layer(self, t=19, w=8, s=16, rho=None, method="barrier", layer=None):
         """
         Adds a plate with rectangular slits to the existing device.
 
@@ -640,6 +641,8 @@ class TMM:
             Slit width [mm]
         s : float or int, optional
             Slit spacing from the center of one slit to the next [mm]
+        rho : float, int or None, optional
+            Plate density [kg/m3] - if 'None' is passed than a fully rigid plate is assumed.
         method : string, optional
             Chooses between the available methods to calculate the perforated plate impedance.
         layer : None or int, optional
@@ -662,6 +665,10 @@ class TMM:
             Rp = 0.5 * np.sqrt(2 * vis * self.rho0 * self.w0) * (4 + (2 * t) / w)
             Xp = self.rho0 * t_corr
             zs = (Rp + 1j * self.w0 *  Xp) / open_area
+            if rho:
+                mip = 1j * self.w0 * rho * t_meters * (1 - open_area) / self.s0  # Mass impedance of the plate
+                zs = 1 / (1 / zs + 1 / mip)
+
             zs = matlib.repmat(zs, len(self.incidence_angle), 1).T
 
             ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
@@ -689,6 +696,7 @@ class TMM:
                               "slot_width [mm]": w,
                               "slot_spacing [mm]": s,
                               "open_area [%]": open_area * 100,
+                              "rho [kg/m3]": rho,
                               "method": method,
                               "matrix": Ts,
                               }
@@ -1203,12 +1211,14 @@ class TMM:
                                                 d=value["hole_diameter [mm]"],
                                                 s=value["hole_spacing [mm]"],
                                                 end_correction=value["end_correction"],
+                                                rho=value["rho [kg/m3]"],
                                                 method=value["method"],
                                                 layer = key)
                 elif value["type"] == "slotted_panel_layer":
                     self.slotted_panel_layer(t=value["thickness [mm]"],
                                              w=value["slot_width [mm]"],
                                              s=value["slot_spacing [mm]"],
+                                             rho=value["rho [kg/m3]"],
                                              method=value["method"],
                                              layer=key)
                 elif value["type"] == "membrane_layer":
@@ -1254,6 +1264,8 @@ class TMM:
                         if "[mm]" in key:
                             converted = key.replace("[mm]", conversion[1])
                             print(f"\t{key}: {value:0.2f} | {converted}: {value * conversion[0]:0.2f}")
+                        elif value is None:
+                            print(f"\t{key}: {None}")
                         else:
                             print(f"\t{key}: {value:0.2f}")
                         if "thickness" in key:

@@ -41,13 +41,11 @@ def recursively_save_dict_contents_to_group(h5file, path, dic):
     """
     for key, item in dic.items():
         if isinstance(item, dict):
-            recursively_save_dict_contents_to_group(h5file, path + str(key) + '/', item)
-        elif item is None:
-            h5file[path + key] = 'None'
+            recursively_save_dict_contents_to_group(h5file, path + str(key) + '/', item if item is not None else "None")
         else:
             if '/' in key:
                 key = key.replace('/', '_div_')
-            h5file[path + key] = item
+            h5file[path + key] = item if item is not None else "None"
 
 
 def load_dict_from_hdf5(h5file, key):
