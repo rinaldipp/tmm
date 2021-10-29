@@ -37,8 +37,17 @@ Toolbox for design and prediction of multilayered acoustic treatments. Also cont
 
 For more examples see the [example files](https://github.com/rinaldipp/tmm/tree/main/examples).
 
+## References
+
+<a id="1">[1]</a> 
+R. Petrolli, A. Zorzo and P. D'Antonio, ["
+Comparison of measurement and prediction for acoustical treatments designed with Transfer Matrix Models
+"](
+https://www.researchgate.net/publication/355668614_Comparison_of_measurement_and_prediction_for_acoustical_treatments_designed_with_Transfer_Matrix_Models/references
+), in *Euronoise*, October 2021.
+
 ## Contact
-For questions about usage, bugs, licensing, citations and/or contributions contact me at rinaldipp@gmail.com.
+For questions about usage, bugs, licensing and/or contributions contact me at rinaldipp@gmail.com.
 
 
 
