@@ -117,6 +117,8 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
     for tmm in tmms:
         if labels == "full" and show_incidence:
             label_name = "" if tmm._filename is None else tmm.filename + " | "
+        elif labels == "full":
+            label_name = "" if tmm._filename is None else tmm.filename
         else:
             label_name = ""
         i = 0
@@ -169,7 +171,7 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                                        label=label_name + f"Incidence at {tmm.incidence_angle[0]:0.0f}°",
                                        linestyle="--")
                 else:
-                    ax[i].semilogx(tmm.freq, tmm.alpha, linewidth=2, label=label_name + "Normal Incidence",
+                    ax[i].semilogx(tmm.freq, tmm.alpha, linewidth=2, label=label_name,
                                    c=tmm.color)
             else:
                 ax[i].semilogx(tmm.freq, tmm.alpha, linewidth=2, label=label_name, c=tmm.color)
