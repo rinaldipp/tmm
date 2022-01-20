@@ -309,6 +309,7 @@ class TMM:
         Angle-dependent absorption coefficient.
         """
         _, alpha = self.reflection_and_absorption_coefficient(self.z_angle[:, angle_idx])
+
         return alpha
 
     def equivalent_fluid_model(self, sigma, model="mac", fibre_type=1):
@@ -1193,6 +1194,16 @@ class TMM:
             if show_layers:
                 self.show_layers()
 
+    def clear_matrix(self):
+        """Removes matrix data from self.matrix to reduce file size."""
+        for matrix in range(len(self.matrix) - 1):
+            self.matrix[matrix]["matrix"] = None
+
+    def reduce_size(self):
+        """Removes the value of some attributes to reduce file size."""
+        self.clear_matrix()
+        self._z_angle = None
+
     def rebuild(self):
         """Rebuild treatment layers to update frequency range."""
         matrix = self.matrix.copy()
@@ -1496,6 +1507,8 @@ class TMM:
         if folder_check is False:
             os.mkdir(self.project_folder + os.sep + "Treatments")
 
+        self.reduce_size()
+
         h5utils.save_class_to_hdf5(self, filename=self.filename,
                                    folder=self.project_folder + os.sep + "Treatments" + os.sep)
         print("HDF5 file saved at " + self.project_folder + os.sep + "Treatments" + os.sep + self.filename + ".h5")
@@ -1518,6 +1531,7 @@ class TMM:
                                              folder=self.project_folder + os.sep + "Treatments" + os.sep)
         else:
             h5utils.load_class_from_hdf5(self, filename)
+        self.rebuild()
         print(filename + ".h5 loaded successfully.")
 
     def plot(self, **kwargs):
