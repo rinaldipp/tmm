@@ -54,7 +54,7 @@ def save_matplotlib_fig(fig, filename, project_folder, timestamp=False, subfolde
     print("Image saved to ", full_path)
 
 
-def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None, max_mode=None, show_incidence=True,
+def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None, max_mode=True, show_incidence=True,
                   labels=True, orientation="vertical", base_fontsize=12, save_fig=False, project_folder=None,
                   filename=None, **kwargs):
     """
@@ -75,9 +75,8 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
     plots : list, optional
         List of strings with the desired plots - 'z' for impedance, 'y' for admittance, 'alpha' for absorption
         coefficient and 'scat' for scattering coefficient.
-    max_mode : int or string, optional
-        Variable to set a maximum limit to peak detection in the absorption coefficient. 'all' for no limit or an int
-        for maximum detection frequency. If 'None' is passed the detection is disabled.
+    max_mode : bool, optional
+        Option to identify first absorption peak if any.
     show_incidence : bool, optional
         Option to display both normal and diffuse incidence absorption curves.
     labels : bool or str, optional
@@ -175,13 +174,11 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                                    c=tmm.color)
             else:
                 ax[i].semilogx(tmm.freq, tmm.alpha, linewidth=2, label=label_name, c=tmm.color)
-            if max_mode == "all":
-                abs_value, idx = utils.find_nearest(tmm.alpha, max(tmm.alpha))
-            elif max_mode is not None:
-                max_mode_val, idx_max_mode = utils.find_nearest(tmm.freq, max_mode)
-                abs_value, idx = utils.find_nearest(tmm.alpha[0:idx_max_mode], max(tmm.alpha[0:idx_max_mode]))
-            if max_mode is not None:
-                ax[i].axvline(x=tmm.freq[idx], label=f"Resonance at {tmm.freq[idx]} Hz", linestyle=":", color="green")
+            if max_mode and tmm.first_peak[0] != max(tmm.freq):
+                ax[i].axvline(x=tmm.first_peak[0],
+                              label=f"Resonance at {tmm.first_peak[0]} Hz",
+                              linestyle=":",
+                              color="green")
             ax[i].set_ylim([-0.1, 1.1])
             ax[i].yaxis.set_ticks(np.arange(0, 1.01, 0.1))
             ax[i].set_yticklabels(np.arange(0, 1.01, 0.1))
