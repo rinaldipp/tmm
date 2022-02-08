@@ -193,6 +193,13 @@ class TMM:
         return alpha.reshape((len(alpha),))
 
     @property
+    def first_peak(self):
+        """Return the frequency in Hz and the absorption coefficient of the first absorption peak."""
+        idx_array = np.diff(np.sign(np.diff(self.alpha))).nonzero()[0]
+        return (self.freq[idx_array[0]] if idx_array.size > 0 else max(self.freq),
+                self.alpha[idx_array[0]] if idx_array.size > 0 else max(self.freq))
+
+    @property
     def scat(self):
         """Return scattering coefficient (given by material_model only)."""
         if self._scat is not None:
