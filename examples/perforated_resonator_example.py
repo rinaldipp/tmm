@@ -16,6 +16,6 @@ if __name__ == "__main__":
     # Compute, plot and export data
     treatment.compute(rigid_backing=True, show_layers=True)
     treatment.plot(plots=["alpha"], save_fig=True)
-    # treatment.save2sheet(n_oct=3)
+    treatment.save2sheet(n_oct=3)
     treatment.save()
-    # bands, filtered_alpha = treatment.filter_alpha(view=True, n_oct=3)
+    bands, filtered_alpha = treatment.filter_alpha(view=True, n_oct=3)

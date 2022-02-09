@@ -13,8 +13,8 @@ if __name__ == "__main__":
 
     # Compute, plot and export data
     treatment.compute(show_layers=False, rigid_backing=True)
-    treatment.plot(plots=["alpha"], save_fig=False, max_mode=1000, figsize=(8, 8))
+    treatment.plot(plots=["alpha"], save_fig=False, figsize=(8, 8))
     treatment.save()
     treatment.load(treatment.filename)
     treatment.rebuild()
-    treatment.plot(plots=["alpha"], save_fig=False, max_mode=1000, figsize=(8, 8))
+    treatment.plot(plots=["alpha"], save_fig=False, figsize=(8, 8))

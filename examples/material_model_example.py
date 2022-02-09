@@ -17,7 +17,7 @@ if __name__ == "__main__":
                       )
 
     # Plot and export data
-    mm.plot(figsize=(7, 5), plots=["alpha", "scat"], save_fig=True, timestamp=False, max_mode=None)
+    mm.plot(figsize=(7, 5), plots=["alpha", "scat"], save_fig=True, timestamp=False)
     mm.save2sheet(timestamp=False, n_oct=3)
     mm.save()
     bands, filtered_alpha = mm.filter_alpha(figsize=(7, 5), plot=True, show=True, n_oct=3)

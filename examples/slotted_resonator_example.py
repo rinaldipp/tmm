@@ -16,4 +16,4 @@ if __name__ == "__main__":
     treatment.plot(plots=["alpha"], save_fig=True, figsize=(7, 4))
     treatment.save2sheet(n_oct=3)
     treatment.save()
-    # bands, filtered_alpha = treatment.filter_alpha(view=True, n_oct=3)
+    bands, filtered_alpha = treatment.filter_alpha(view=True, n_oct=3)
