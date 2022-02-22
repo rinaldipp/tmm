@@ -68,6 +68,7 @@ class TMM:
         self._matrix = {}
         self._project_folder = project_folder
         self._filename = filename
+        self._display_name = None
         self._color = color
 
     @property
@@ -278,6 +279,11 @@ class TMM:
             return self._filename
         else:
             return "TMM"
+
+    @property
+    def display_name(self):
+        """Return optional display name string."""
+        return self._display_name
 
     @filename.setter
     def filename(self, new_filename):
