@@ -56,6 +56,7 @@ class TMM:
 
         self._fmin = fmin
         self._fmax = fmax
+        self._freq = None
         self._df = df
         self._s0 = 1
         self._srad = 1
@@ -104,7 +105,15 @@ class TMM:
     @property
     def freq(self):
         """Return frequency values."""
-        return np.linspace(self.fmin, self.fmax, int((self.fmax - self.fmin) / self.df) + 1)
+        if self._freq is None:
+            return np.linspace(self.fmin, self.fmax, int((self.fmax - self.fmin) / self.df) + 1)
+        else:
+            return self._freq
+
+    @freq.setter
+    def freq(self, new_freq):
+        """Sets frequency values."""
+        self._freq = new_freq
 
     @property
     def air_prop(self):
