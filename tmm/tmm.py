@@ -71,6 +71,7 @@ class TMM:
         self._filename = filename
         self._display_name = None
         self._color = color
+        self._params = {}
 
     @property
     def fmin(self):
@@ -299,6 +300,19 @@ class TMM:
         """Set filename."""
         self._filename = new_filename
 
+    @property
+    def params(self):
+        """Return dictionary with extra parameters."""
+        return self._params
+
+    @params.setter
+    def params(self, new_params):
+        """Set extra params dictionary."""
+        if isinstance(new_params, dict):
+            self._params = new_params
+        else:
+            raise TypeError("Extra parameters have to be inside a dictionary.")
+        
     def reflection_and_absorption_coefficient(self, zs):
         """
         Calculate reflection coefficient and absorption coefficient for a given surface impedance.
