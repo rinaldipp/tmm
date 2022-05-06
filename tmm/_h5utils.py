@@ -119,9 +119,9 @@ def parse_dataset_item(item):
             item = int(item)
         else:
             item = item.tolist()
-    elif np.issubdtype(item.dtype, np.float) and item.shape == ():
+    elif np.issubdtype(item.dtype, float) and item.shape == ():
         item = float(item)
-    elif np.issubdtype(item.dtype, np.bool):
+    elif np.issubdtype(item.dtype, bool):
         item = bool(item)
     return item
 
