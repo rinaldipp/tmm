@@ -73,6 +73,9 @@ class TMM:
         self._color = color
         self._params = {}
 
+    def __repr__(self):
+        return f"TMM_{self.filename}_{len(self.matrix) - 1}layers_{self.first_peak[0]:0.0f}Hz"
+
     @property
     def fmin(self):
         """Return minimum frequency of analysis."""
