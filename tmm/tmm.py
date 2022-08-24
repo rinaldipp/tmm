@@ -210,8 +210,8 @@ class TMM:
     def first_peak(self):
         """Return the frequency in Hz and the absorption coefficient of the first absorption peak."""
         idx_array = np.diff(np.sign(np.diff(self.alpha))).nonzero()[0]
-        return (self.freq[idx_array[0]] if idx_array.size > 0 else max(self.freq),
-                self.alpha[idx_array[0]] if idx_array.size > 0 else max(self.freq))
+        return (self.freq[idx_array[0] + 1] if idx_array.size > 0 else max(self.freq),
+                self.alpha[idx_array[0] + 1] if idx_array.size > 0 else max(self.freq))
 
     @property
     def scat(self):
@@ -552,7 +552,8 @@ class TMM:
                               "matrix": Tm,
                               }
 
-    def perforated_panel_layer(self, t=19, d=8, s=16, rho=None, end_correction="jb", method="barrier", layer=None):
+    def perforated_panel_layer(self, t=19, d=8, s=16, open_area=None, rho=None, end_correction="jb", method="barrier",
+                               layer=None):
         """
         Adds a plate with circular perforations to the existing device.
 
@@ -564,6 +565,9 @@ class TMM:
             Hole diameter [mm]
         s : float or int, optional
             Hole spacing from the center of one hole to the next [mm]
+        open_area : float, optional
+            Ration of open area. If set to 'None' it will be calculated with the hole spacing 's'. If set to a value
+            the equivalent spacing will be calculated and overwrite the existing value.
         rho : float, int or None, optional
             Plate density [kg/m3] - if 'None' is passed than a fully rigid plate is assumed.
         end_correction : string, optional
@@ -581,7 +585,10 @@ class TMM:
         if d < 2 / s:
             print(f"WARNING: Hole spacing too small for {d} [mm] hole diameter.")
 
-        open_area = np.pi / (s_meters / (d_meters / 2)) ** 2
+        if open_area is None:
+            open_area = np.pi / ((2 * s_meters / d_meters) ** 2)
+        else:
+            s = d / 2 * np.sqrt(np.pi / open_area)
 
         t_corr = None
         if end_correction == "nesterov":
