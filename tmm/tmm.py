@@ -211,7 +211,7 @@ class TMM:
         """Return the frequency in Hz and the absorption coefficient of the first absorption peak."""
         idx_array = np.diff(np.sign(np.diff(self.alpha))).nonzero()[0]
         return (self.freq[idx_array[0] + 1] if idx_array.size > 0 else max(self.freq),
-                self.alpha[idx_array[0] + 1] if idx_array.size > 0 else max(self.freq))
+                self.alpha[idx_array[0] + 1] if idx_array.size > 0 else max(self.alpha))
 
     @property
     def scat(self):
@@ -517,6 +517,23 @@ class TMM:
                               "thickness [mm]": t,
                               "matrix": Ta,
                               }
+
+    def constant_z(self, z=85):
+        """
+        Sets a constant impedance value across all the frequencies. Useful to define, rigid, semi-rigid or anechoic
+        impedance/admittance/absorption values.
+
+        A fully rigid surface has an impedance value close to infinity, while a fully anechoic surface is equivalent to
+        the impedance of the medium, i.e. the air impedance.
+
+        Parameters
+        ----------
+        z : int, optional
+            Normalized impedance value.
+        """
+        self.z = np.full_like(self.freq, z)
+        self.z_angle = np.full_like(self.freq, self.z[0], shape=(len(self.freq), len(self.incidence_angle)))
+        self.matrix = {"termination": {"type": "constant_z"}}
 
     def membrane_layer(self, t=1, rho=8050, layer=None):
         """
@@ -1183,7 +1200,7 @@ class TMM:
         z_field = 1 / Af
         return z_field
 
-    def compute(self, rigid_backing=False, conj=False, show_layers=True):
+    def compute(self, rigid_backing=True, conj=False, show_layers=True):
         """
         Calculates the global transfer matrix for the existing layers.
 
@@ -1197,7 +1214,7 @@ class TMM:
         show_layers : bool, optional
             Option to display the layers and their details.
         """
-        if "material_model" not in self.filename:
+        if list(self.matrix.keys())[0] != "termination" and "material_model" not in self.filename:
             self.matrix = dict(collections.OrderedDict(sorted(self.matrix.items())))
 
             if "rigid_backing" in self.matrix[list(self.matrix.keys())[-1]]:
@@ -1255,7 +1272,10 @@ class TMM:
         matrix = self.matrix.copy()
         self.matrix = {}
         for key, value in matrix.items():
-            if key != "material_model":
+            if key == "termination":
+                if value["type"] == "constant_z":
+                    self.constant_z(self.z[0])
+            elif key != "material_model":
                 if value["type"] == "porous_layer":
                     self.porous_layer(sigma=value["flow_resistivity [k*Pa*s/m²]"],
                                       t=value["thickness [mm]"],
@@ -1284,6 +1304,7 @@ class TMM:
                                         layer=key)
             else:
                 self.material_model(value["type"], params=value["params"])
+
         if matrix[list(matrix.keys())[-1]]["type"] == "backing" and \
                 matrix[list(matrix.keys())[-1]]["rigid_backing"] is True:
             self.compute(rigid_backing=True, show_layers=False)
