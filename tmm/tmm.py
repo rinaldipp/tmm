@@ -210,8 +210,13 @@ class TMM:
     def first_peak(self):
         """Return the frequency in Hz and the absorption coefficient of the first absorption peak."""
         idx_array = np.diff(np.sign(np.diff(self.alpha))).nonzero()[0]
-        return (self.freq[idx_array[0] + 1] if idx_array.size > 0 else self.freq[np.argmax(self.alpha)],
-                self.alpha[idx_array[0] + 1] if idx_array.size > 0 else np.amax(self.alpha))
+        if idx_array.size == 0:
+            return self.freq[np.argmax(self.alpha)], np.amax(self.alpha)
+        else:
+            if self.alpha[idx_array[0] + 1] >= 0.3:
+                return self.freq[idx_array[0] + 1], self.alpha[idx_array[0] + 1]
+            else:
+                return self.freq[idx_array[-1] + 1], self.alpha[idx_array[-1] + 1]
 
     @property
     def scat(self):
