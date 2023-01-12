@@ -605,7 +605,8 @@ class TMM:
         s_meters = s / 1000
 
         if d < 2 / s:
-            print(f"WARNING: Hole spacing too small for {d} [mm] hole diameter.")
+            if method != "barrier_mpp":
+                print(f"WARNING: Hole spacing might be too small for {d} [mm] hole diameter.")
 
         if open_area is None:
             open_area = np.pi / ((2 * s_meters / d_meters) ** 2)

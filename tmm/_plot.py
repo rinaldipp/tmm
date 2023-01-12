@@ -55,8 +55,8 @@ def save_matplotlib_fig(fig, filename, project_folder, timestamp=False, subfolde
 
 
 def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None, max_mode=True, show_incidence=True,
-                  labels=True, orientation="vertical", base_fontsize=12, save_fig=False, project_folder=None,
-                  filename=None, **kwargs):
+                  labels=True, orientation="vertical", base_fontsize=12, xtype="log", legend="inside", save_fig=False,
+                  project_folder=None, filename=None,  **kwargs):
     """
     Plots impedance, admittance, absorption and scattering coefficients with Matplotlib.
 
@@ -85,6 +85,10 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
         Stacking orientation of the subplot - 'vertical' or 'horizontal'.
     base_fontsize : int, optional
         Base font size.
+    xtype : string, optional
+        Frequency axis type - 'linear' or 'log'.
+    legend : string, optional
+        Legend placement option - 'inside' or 'outside'.
     save_fig : bool, optional
         Option to save figure as static image.
     project_folder : str
@@ -129,9 +133,9 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                     ax[i] = plt.subplot(gs[0, i])
             ax[i].set_title(r"Normalized Surface Impedance ($Z$)", fontsize=base_fontsize)
             ax[i].set_ylabel(r"$Z$ [Pa·s/m³]", fontsize=base_fontsize - 2)
-            ax[i].semilogx(tmm.freq, np.real(tmm.z_norm), linewidth=2, label=label_name + "Real", c=tmm.color,
+            ax[i].plot(tmm.freq, np.real(tmm.z_norm), linewidth=2, label=label_name + "Real", c=tmm.color,
                            linestyle='-')
-            ax[i].semilogx(tmm.freq, np.imag(tmm.z_norm), linewidth=2, label=label_name + "Imag.", c=tmm.color,
+            ax[i].plot(tmm.freq, np.imag(tmm.z_norm), linewidth=2, label=label_name + "Imag.", c=tmm.color,
                            linestyle='--')
             i += 1
 
@@ -143,9 +147,9 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                     ax[i] = plt.subplot(gs[0, i])
             ax[i].set_title(r"Normalized Surface Admittance ($Y$)", fontsize=base_fontsize)
             ax[i].set_ylabel(r"$Y$ [m³/Pa·s]", fontsize=base_fontsize - 1)
-            ax[i].semilogx(tmm.freq, np.real(tmm.y_norm), linewidth=2, label=label_name + "Real", c=tmm.color,
+            ax[i].plot(tmm.freq, np.real(tmm.y_norm), linewidth=2, label=label_name + "Real", c=tmm.color,
                            linestyle='-')
-            ax[i].semilogx(tmm.freq, np.imag(tmm.y_norm), linewidth=2, label=label_name + "Imag.", c=tmm.color,
+            ax[i].plot(tmm.freq, np.imag(tmm.y_norm), linewidth=2, label=label_name + "Imag.", c=tmm.color,
                            linestyle='--')
             i += 1
 
@@ -159,21 +163,21 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
             ax[i].set_ylabel(r"$\alpha$ [-]", fontsize=base_fontsize - 1)
             if show_incidence:
                 if tmm.incidence == "diffuse" and "material_model" not in tmm.filename:
-                    ax[i].semilogx(tmm.freq, tmm.alpha, linewidth=2, c=tmm.color,
+                    ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, c=tmm.color,
                                    label=label_name + "Diffuse Incidence " +
                                          f"({min(tmm.incidence_angle):0.0f}° - {max(tmm.incidence_angle):0.0f}°)")
                     if np.round(tmm.incidence_angle[0]) == 0:
-                        ax[i].semilogx(tmm.freq, tmm.alpha_angle(), linewidth=2, c=tmm.color,
+                        ax[i].plot(tmm.freq, tmm.alpha_angle(), linewidth=2, c=tmm.color,
                                        label=label_name + "Normal Incidence", linestyle="--")
                     else:
-                        ax[i].semilogx(tmm.freq, tmm.alpha_angle(), linewidth=2, c=tmm.color,
+                        ax[i].plot(tmm.freq, tmm.alpha_angle(), linewidth=2, c=tmm.color,
                                        label=label_name + f"Incidence at {tmm.incidence_angle[0]:0.0f}°",
                                        linestyle="--")
                 else:
-                    ax[i].semilogx(tmm.freq, tmm.alpha, linewidth=2, label=label_name,
+                    ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, label=label_name,
                                    c=tmm.color)
             else:
-                ax[i].semilogx(tmm.freq, tmm.alpha, linewidth=2, label=label_name, c=tmm.color)
+                ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, label=label_name, c=tmm.color)
             if max_mode and tmm.first_peak[0] != max(tmm.freq):
                 ax[i].axvline(x=tmm.first_peak[0],
                               label=f"Resonance at {tmm.first_peak[0]} Hz",
@@ -193,7 +197,7 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                     ax[i] = plt.subplot(gs[0, i])
             ax[i].set_title(r"Scattering Coefficient ($s$)", fontsize=base_fontsize)
             ax[i].set_ylabel(r"$s$ [-]", fontsize=base_fontsize - 1)
-            ax[i].semilogx(tmm.freq, tmm.scat, linewidth=2, label=label_name, c=tmm.color)
+            ax[i].plot(tmm.freq, tmm.scat, linewidth=2, label=label_name, c=tmm.color)
             ax[i].set_ylim([-0.1, 1.1])
             ax[i].yaxis.set_ticks(np.arange(0, 1.01, 0.1))
             ax[i].set_yticklabels(np.arange(0, 1.01, 0.1))
@@ -202,6 +206,7 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
 
         for i in range(len(ax)):
             ax[i].set_xlabel("Frequency [Hz]", fontsize=base_fontsize - 1)
+            ax[i].set_xscale(xtype)
             ax[i].set_xlim([(np.min(tmm.freq)), (np.max(tmm.freq))])
             ax[i].get_xaxis().set_major_formatter(ticker.ScalarFormatter())
             ax[i].get_xaxis().set_minor_formatter(ticker.ScalarFormatter())
@@ -210,8 +215,12 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
             ax[i].tick_params(axis="both", which="both", labelsize=base_fontsize - 2)
             ax[i].minorticks_on()
             ax[i].grid("minor")
+
             if labels == "full" and orientation == "vertical":
-                ax[i].legend(bbox_to_anchor=(1.04, 0), loc="lower left", fontsize=base_fontsize - 2)
+                if legend == "outside":
+                    ax[i].legend(bbox_to_anchor=(1.04, 0), loc="lower left", fontsize=base_fontsize - 2)
+                else:
+                    ax[i].legend(loc="best", fontsize=base_fontsize - 2)
             elif labels is True:
                 ax[i].legend(loc="best", fontsize=base_fontsize - 2)
 
