@@ -13,6 +13,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/rinaldipp/tmm",
     packages=setuptools.find_packages(),
+    include_package_data=True,
     install_requires=['numpy', 'scipy', 'matplotlib', 'pandas', 'mpmath', 'xlsxwriter', 'h5py'],
     classifiers=[
         "Programming Language :: Python :: 3",
