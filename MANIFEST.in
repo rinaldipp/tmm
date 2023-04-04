@@ -1,3 +1,1 @@
-recursive-include tmm/database *.csv
-recursive-include tmm/database *.txt
-recursive-include tmm/database *.pdf
+recursive-include tmm/database/*
