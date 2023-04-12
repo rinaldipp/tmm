@@ -268,6 +268,11 @@ class TMM:
         self._matrix = new_matrix
 
     @property
+    def depth(self):
+        """Returns the treatment depth in millimeters."""
+        return sum(value["thickness [mm]"] for value in self.matrix.values() if "thickness [mm]" in value)
+
+    @property
     def color(self):
         """Return color string."""
         return self._color
