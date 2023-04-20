@@ -29,7 +29,7 @@ class TMM:
     Transfer Matrix Method for design and prediction of multilayered acoustic treatments.
     """
     def __init__(self, fmin=20, fmax=5000, df=1, incidence="diffuse", incidence_angle=None, project_folder=None,
-                 filename=None, color=None):
+                 filename=None, color=None, x_scale="lin"):
         """
         Parameters
         ----------
@@ -50,6 +50,8 @@ class TMM:
             Filename that will be used to save data and image files.
         color : string, optional
             String representing Matplolib color - used for plotting only.
+        x_scale : string, optional
+            X axis scale - 'lin' for linear or 'log' for logarithmic.
         """
         if incidence_angle is None:
             incidence_angle = [0, 78, 1]
@@ -72,6 +74,7 @@ class TMM:
         self._display_name = None
         self._color = color
         self._params = {}
+        self._x_scale = x_scale
 
     def __repr__(self):
         return f"TMM_{self.filename}_{len(self.matrix) - 1}layers_{self.first_peak[0]:0.0f}Hz"
@@ -110,7 +113,14 @@ class TMM:
     def freq(self):
         """Return frequency values."""
         if self._freq is None:
-            return np.linspace(self.fmin, self.fmax, int((self.fmax - self.fmin) / self.df) + 1)
+            if self._x_scale == "lin":
+                return np.linspace(self.fmin,
+                                   self.fmax,
+                                   int((self.fmax - self.fmin) / self.df) + 1).round(1)
+            elif self._x_scale == "log":
+                return np.logspace(np.log10(self.fmin),
+                                   np.log10(self.fmax),
+                                   int((self.fmax - self.fmin) / self.df) + 1).round(1)
         else:
             return self._freq
 
@@ -1270,8 +1280,9 @@ class TMM:
 
     def clear_matrix(self):
         """Removes matrix data from self.matrix to reduce file size."""
-        for matrix in range(len(self.matrix) - 1):
-            self.matrix[matrix]["matrix"] = None
+        for matrix in self.matrix.keys():
+            if "matrix" in list(self.matrix[matrix].keys()):
+                self.matrix[matrix]["matrix"] = None
 
     def reduce_size(self):
         """Removes the value of some attributes to reduce file size."""
