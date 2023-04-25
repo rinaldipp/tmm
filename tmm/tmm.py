@@ -1301,6 +1301,7 @@ class TMM:
                 if value["type"] == "porous_layer":
                     self.porous_layer(sigma=value["flow_resistivity [k*Pa*s/m²]"],
                                       t=value["thickness [mm]"],
+                                      model=value["model"],
                                       layer=key)
                 elif value["type"] == "air_layer":
                     self.air_layer(t=value["thickness [mm]"],
@@ -1312,7 +1313,7 @@ class TMM:
                                                 end_correction=value["end_correction"],
                                                 rho=value["rho [kg/m3]"],
                                                 method=value["method"],
-                                                layer = key)
+                                                layer=key)
                 elif value["type"] == "slotted_panel_layer":
                     self.slotted_panel_layer(t=value["thickness [mm]"],
                                              w=value["slot_width [mm]"],
@@ -1332,6 +1333,80 @@ class TMM:
             self.compute(rigid_backing=True, show_layers=False)
         else:
             self.compute(rigid_backing=False, show_layers=False)
+
+    def log_rebuild(self):
+        """Logs a list of commands calls needed to recreate the TMM object."""
+        matrix = self.matrix.copy()
+        logged_calls = [f"# {self.filename.capitalize()}",
+                        f"{self.filename} = TMM("
+                        f"fmin={self.fmin}, "
+                        f"fmax={self.fmax}, "
+                        f"df={self.df:0.2f}, "
+                        f"project_folder=fm.folder_path, "
+                        f"incidence='diffuse', "
+                        f"filename='{self.filename}')"]
+
+        for key, value in matrix.items():
+            if key == "termination":
+                if value["type"] == "constant_z":
+                    logged_calls.append(f"{self.filename}.constant_z({self.z[0]:0.3f})")
+            elif key != "material_model":
+                if value["type"] == "porous_layer":
+                    logged_calls.append(
+                        f"{self.filename}.porous_layer("
+                        f"model='{value['model']}', "
+                        f"t={value['thickness [mm]']:0.1f}, "
+                        f"sigma={value['flow_resistivity [k*Pa*s/m²]']})"
+                        )
+                elif value["type"] == "air_layer":
+                    logged_calls.append(f"{self.filename}.air_layer(t={value['thickness [mm]']:0.1f})")
+                elif value["type"] == "perforated_panel_layer":
+                    logged_calls.append(
+                        f"{self.filename}.perforated_panel_layer("
+                        f"t={value['thickness [mm]']:0.1f}, "
+                        f"d={value['hole_diameter [mm]']:0.1f}, "
+                        f"s={value['hole_spacing [mm]']:0.1f}, "
+                        f"end_correction='{value['end_correction']}', "
+                        f"rho={value['rho [kg/m3]']}, "
+                        f"method='{value['method']}'"
+                        f")"
+                        )
+                elif value["type"] == "slotted_panel_layer":
+                    logged_calls.append(
+                        f"{self.filename}.slotted_panel_layer("
+                        f"t={value['thickness [mm]']:0.1f}, "
+                        f"w={value['slot_width [mm]']:0.1f}, "
+                        f"s={value['slot_spacing [mm]']:0.1f}, "
+                        f"rho={value['rho [kg/m3]']}, "
+                        f"method='{value['method']}'"
+                        f")"
+                        )
+                elif value["type"] == "membrane_layer":
+                    logged_calls.append(
+                        f"{self.filename}.membrane_layer("
+                        f"t={value['thickness [mm]']:0.1f}, "
+                        f"rho={value['density [kg/m³]']}"
+                        f")"
+                        )
+            else:
+                logged_calls.append(f"{self.filename}.material_model('{value['type']}', params={value['params']})")
+
+        if matrix[list(matrix.keys())[-1]]["type"] == "backing" and \
+                matrix[list(matrix.keys())[-1]]["rigid_backing"] is True:
+            logged_calls.append(f"{self.filename}.compute(rigid_backing=True, show_layers=True)")
+        else:
+            logged_calls.append(f"{self.filename}.compute(rigid_backing=False, show_layers=True)")
+
+        logged_calls += [f"{self.filename}.plot(figsize=(7, 4), plots=['alpha'], save_fig=True, timestamp=False)",
+                         f"{self.filename}.save()"]
+
+        return logged_calls
+
+    def print_rebuild(self):
+        """Prints the list of commands calls needed to recreate the TMM object."""
+        logged_calls = self.log_rebuild()
+        for call in logged_calls:
+            print(call)
 
     def show_layers(self, conversion=None):
         """
