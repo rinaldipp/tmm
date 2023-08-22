@@ -1196,7 +1196,8 @@ class TMM:
             raise NameError(f"Available material models: {available_types}")
 
         self.z = self.z * self.z0
-        self.filename = self.filename + "_material_model"
+        if "_material_model" not in self.filename:
+            self.filename = self.filename + "_material_model"
         self.matrix = {"material_model": {"type": type,
                                           "params": params}}
 
@@ -1328,9 +1329,10 @@ class TMM:
             else:
                 self.material_model(value["type"], params=value["params"])
 
-        if matrix[list(matrix.keys())[-1]]["type"] == "backing" and \
-                matrix[list(matrix.keys())[-1]]["rigid_backing"] is True:
-            self.compute(rigid_backing=True, show_layers=False)
+        if matrix[list(matrix.keys())[-1]]["type"] == "backing":
+            self.compute(rigid_backing=matrix[list(matrix.keys())[-1]]["rigid_backing"],
+                         conj=matrix[list(matrix.keys())[-1]]["impedance_conjugate"], 
+                         show_layers=False)
         else:
             self.compute(rigid_backing=False, show_layers=False)
 
@@ -1698,11 +1700,12 @@ class TMM:
         self.rebuild()
         print(filename + ".h5 loaded successfully.")
 
-    def plot(self, **kwargs):
+    def plot(self, show_fig=True, **kwargs):
         """View acoustic data. See tmm._plot.acoustic data for kwargs."""
         if "filename" not in kwargs:
             kwargs["filename"] = self.filename
         if "project_folder" not in kwargs:
             kwargs["project_folder"] = self.project_folder
         _, _, _ = plot.acoustic_data([self], **kwargs)
-        plt.show()
+        if show_fig:
+            plt.show()
