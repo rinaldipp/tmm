@@ -4,6 +4,7 @@ Utility functions.
 For further information check the function specific documentation.
 """
 import numpy as np
+import scipy
 
 
 class AirProperties:
@@ -151,3 +152,117 @@ def find_nearest(array, value):
     value = array[idx]
 
     return value, idx
+
+
+def filter_values(freq, values, n_oct=1):
+    """
+    Filters the given values into n_oct bands.
+
+    Parameters
+    ----------
+    freq : ndarray
+        Array containing the frequency axis.
+    values : ndarray
+        Array containing the magnitude values to be filtered.
+    n_oct : int, optional
+        Fractional octave bands that the absorption will be filtered to.
+
+    Returns
+    -------
+    bands : ndarray
+        An array containing the center frequencies of the available bands.
+    result : ndarray
+        An array containing the filtered values in the available bands.
+    """
+    bands = nth_octave(n_oct, fmin=min(freq), fmax=max(freq))
+    df_bands = bands[1][1] - bands[0][1]
+    df_freq = freq[1] - freq[0]
+    if df_bands < df_freq:
+        interp_fun = scipy.interpolate.interp1d(freq, values)
+        freq = np.linspace(min(freq), max(freq), int((max(freq) - min(freq) - 1) / df_bands))
+        values = interp_fun(freq)
+        
+    edges = np.delete(bands, 1, axis=1)
+    lidx = np.searchsorted(freq, edges[:, 0], 'right')
+    ridx = np.searchsorted(freq, edges[:, 1], 'left')
+    result = np.array([np.sum(values[i:j]) / len(values[i:j]) for (i, j) in zip(lidx, ridx) if values[i:j].size > 0])
+
+    return bands[:, 1], result.astype(values.dtype)
+
+
+def nth_octave(fraction, fmin=20, fmax=20000):
+    """ ANSI s1.11-2004 && IEC 61260-1-2014
+    Array of frequencies and its edges according to the ANSI and IEC standard.
+    :param fraction: Bandwidth 'b'. Examples: 1/3-octave b=3, 1-octave b=1,
+    2/3-octave b = 3/2
+    :param limits: It is a list with the minimum and maximum frequency that
+    the array should have. Example: [12,20000]
+    :returns: Frequency array, lower edge array and upper edge array
+    :rtype: list, list, list
+    """
+    limits = [fmin, fmax]
+
+    # Octave ratio g (ANSI s1.11, 3.2, pg. 2)
+    g = 10 ** (3 / 10)  # Or g = 2
+    # Reference frequency (ANSI s1.11, 3.4, pg. 2)
+    fr = 1000
+
+    # Get starting index 'x' and first center frequency
+    x = initindex(limits[0], fr, g, fraction)
+    freq = ratio(g, x, fraction) * fr
+
+    # Get each frequency until reach maximum frequency
+    freq_x = 0
+    while freq_x * bandedge(g, fraction) < limits[1]:
+        # Increase index
+        x = x + 1
+        # New frequency
+        freq_x = ratio(g, x, fraction) * fr
+        # Store new frequency
+        freq = np.append(freq, freq_x)
+
+    # Get band-edges
+    freq_d = freq / bandedge(g, fraction)
+    freq_u = freq * bandedge(g, fraction)
+
+    return np.array([freq_d, freq, freq_u]).T
+
+
+def band_edges(freq, fraction):
+    """ ANSI s1.11-2004 && IEC 61260-1-2014
+    Frequency band edge values according to the ANSI and IEC standard.
+    """
+    # Octave ratio g (ANSI s1.11, 3.2, pg. 2)
+    g = 10 ** (3 / 10)  # Or g = 2
+
+    # Get band-edges
+    freq_d = freq / bandedge(g, fraction)
+    freq_u = freq * bandedge(g, fraction)
+
+    return np.array([freq_d, freq, freq_u]).T
+
+
+def ratio(g, x, b):
+    if b % 2:  # ODD (ANSI s1.11, eq. 3)
+        return g ** ((x - 30) / b)
+    else:  # EVEN (ANSI s1.11, eq. 4)
+        return g ** ((2 * x - 59) / (2 * b))
+
+
+def bandedge(g, b):
+    # Band-edge ratio (ANSI s1.11, 3.7, pg. 3)
+    return g ** (1 / (2 * b))
+
+
+def initindex(f, fr, g, b):
+    if b % 2:  # ODD ('x' solve from ANSI s1.11, eq. 3)
+        return np.round(
+                (b * np.log(f / fr) + 30 * np.log(g)) / np.log(g)
+                )
+    else:  # EVEN ('x' solve from ANSI s1.11, eq. 4)
+        return np.round(
+                (2 * b * np.log(f / fr) + 59 * np.log(g)) / (2 * np.log(g))
+                )
+
+
+

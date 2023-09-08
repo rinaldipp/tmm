@@ -9,11 +9,9 @@ Toolbox for design and prediction of multilayered acoustic treatments. Also cont
 - pandas
 - xlsxwriter
 - h5py  
-- [pytta](https://github.com/PyTTAmaster/PyTTa)
 
 ## Installation
     pip install numpy scipy mpmath matplotlib pandas xlsxwriter
-    pip install git+https://github.com/pyttamaster/pytta@development
     pip install git+https://github.com/rinaldipp/tmm.git
 
 ## Example

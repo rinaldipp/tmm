@@ -1,26 +1,37 @@
 """
-Calculation module.
+Toolbox for design and prediction of multilayered acoustic treatments. 
+Also contains a material model based on the GRAS database.
+
+Developed by Rinaldi Petrolli. 
+For questions about usage, bugs, licensing and/or contributions contact me at rinaldipp@gmail.com.
+
+References
+----------
+[1] R. Petrolli, A. Zorzo and P. D'Antonio, " Comparison of measurement and prediction for acoustical treatments 
+    designed with Transfer Matrix Models ", in Euronoise, October 2021.
 
 For further information check the function specific documentation.
 """
 import collections
+import os
+import time
+
 import numpy as np
 import numpy.matlib as matlib
-import os
-from matplotlib import ticker, gridspec, style
-from matplotlib import pyplot as plt
 import pandas
 import xlsxwriter
-from scipy.special import jv
+from matplotlib import pyplot as plt
+from matplotlib import style
+from scipy import integrate
 from scipy.interpolate import CubicSpline
 from scipy.signal import butter, freqz, savgol_filter
-import time
-from scipy import integrate
-import pytta
+from scipy.special import jv
+
+from tmm import _h5utils as h5utils
 from tmm import _plot as plot
 from tmm import _utils as utils
-from tmm import _h5utils as h5utils
 from tmm.database.path import path as database_path
+
 style.use("seaborn-colorblind")
 
 
@@ -1467,7 +1478,8 @@ class TMM:
         -------
         Bands' center frequency array and filtered absorption array.
         """
-        bands, result = pytta.utils.filter_values(self.freq, self.alpha, nthOct=n_oct)
+        # bands, result = pytta.utils.filter_values(self.freq, self.alpha, nthOct=n_oct)
+        bands, result = utils.filter_values(self.freq, self.alpha, n_oct=n_oct)
 
         # Plot
         if view:
