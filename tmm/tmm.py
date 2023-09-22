@@ -32,7 +32,7 @@ from tmm import _plot as plot
 from tmm import _utils as utils
 from tmm.database.path import path as database_path
 
-style.use("seaborn-colorblind")
+plot.set_style()
 
 
 class TMM:

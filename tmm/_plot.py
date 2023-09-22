@@ -6,18 +6,22 @@ This module receives organized raw data and plot it through its functions.
 For further information check the function specific documentation.
 """
 import os
-import numpy as np
 import time
-from matplotlib import ticker, gridspec, style
-from matplotlib import pyplot as plt
-from tmm import _utils as utils
 
-try:
-    style.use("seaborn-colorblind")
-except OSError:
-    style.use("seaborn-v0_8-colorblind")
-else:
-    pass
+import numpy as np
+from matplotlib import gridspec
+from matplotlib import pyplot as plt
+from matplotlib import style, ticker
+
+
+def set_style():
+    """Sets the matplotlib style."""
+    try:
+        style.use("seaborn-colorblind")
+    except OSError:
+        style.use("seaborn-v0_8-colorblind")
+    else:
+        pass
 
 
 def save_matplotlib_fig(fig, filename, project_folder, timestamp=False, subfolder="", ext=".png", **kwargs):
