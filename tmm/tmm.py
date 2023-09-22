@@ -639,6 +639,9 @@ class TMM:
         else:
             s = d / 2 * np.sqrt(np.pi / open_area)
 
+        if open_area > 1:
+            raise ValueError("Open area cannot be greater than 1.")
+
         t_corr = None
         if end_correction == "nesterov":
             # Acoustic Absorbers and Diffusers by Trevor Cox and Peter D'Antonio
@@ -750,6 +753,8 @@ class TMM:
         s_meters = s / 1000
 
         open_area = w_meters / s_meters
+        if open_area > 1:
+            raise ValueError("Slit spacing must be larger than slit width.")
 
         t_corr = t_meters + 2 * w_meters * (-1 / np.pi) * np.log(np.sin(0.5 * np.pi * open_area))
         Ts = None

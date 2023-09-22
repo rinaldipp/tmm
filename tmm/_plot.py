@@ -11,7 +11,13 @@ import time
 from matplotlib import ticker, gridspec, style
 from matplotlib import pyplot as plt
 from tmm import _utils as utils
-style.use("seaborn-colorblind")
+
+try:
+    style.use("seaborn-colorblind")
+except OSError:
+    style.use("seaborn-v0_8-colorblind")
+else:
+    pass
 
 
 def save_matplotlib_fig(fig, filename, project_folder, timestamp=False, subfolder="", ext=".png", **kwargs):
