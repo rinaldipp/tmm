@@ -728,7 +728,7 @@ class TMM:
                               "matrix": Tp,
                               }
 
-    def slotted_panel_layer(self, t=19, w=8, s=16, rho=None, method="barrier", layer=None):
+    def slotted_panel_layer(self, t=19, w=8, s=16, open_area=None, rho=None, method="barrier", layer=None):
         """
         Adds a plate with rectangular slits to the existing device.
 
@@ -740,6 +740,9 @@ class TMM:
             Slit width [mm]
         s : float or int, optional
             Slit spacing from the center of one slit to the next [mm]
+        open_area : float, optional
+            Ration of open area. If set to 'None' it will be calculated with the hole spacing 's'. If set to a value
+            the equivalent spacing will be calculated and overwrite the existing value.
         rho : float, int or None, optional
             Plate density [kg/m3] - if 'None' is passed than a fully rigid plate is assumed.
         method : string, optional
@@ -747,12 +750,16 @@ class TMM:
         layer : None or int, optional
             Optional value to choose the layer level. If None is passed the layer will be adding to the existing ones.
         """
+        if open_area is None:
+            open_area = w / s
+        else:
+            s = w / open_area
+
         # Adjusting units
         t_meters = t / 1000  # Convert millimeters to meters
         w_meters = w / 1000
         s_meters = s / 1000
 
-        open_area = w_meters / s_meters
         if open_area > 1:
             raise ValueError("Slit spacing must be larger than slit width.")
 
@@ -1726,3 +1733,24 @@ class TMM:
         _, _, _ = plot.acoustic_data([self], **kwargs)
         if show_fig:
             plt.show()
+
+    def view(self, show_fig=True, **kwargs):
+        """View 3D treatment model and performance. See tmm._vis.view_layers and tmm._vis.view_treatment for kwargs."""
+        from tmm import _vis as vis
+        if "template" not in kwargs:
+            kwargs["template"] = "seaborn"
+        if "height" not in kwargs:
+            kwargs["height"] = 400
+        if "width" not in kwargs:
+            kwargs["width"] = 700
+        if "transparent_bg" not in kwargs:
+            kwargs["transparent_bg"] = False
+
+        fig1 = vis.view_layers(self, **kwargs)
+        fig2 = vis.view_treatment(self, title="<b>Absorption Coefficient</b>", **kwargs)
+
+        if show_fig:
+            fig1.show()
+            fig2.show()
+
+        return fig1, fig2

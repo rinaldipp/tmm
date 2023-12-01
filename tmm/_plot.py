@@ -228,11 +228,11 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
 
             if labels == "full" and orientation == "vertical":
                 if legend == "outside":
-                    ax[i].legend(bbox_to_anchor=(1.04, 0), loc="lower left", fontsize=base_fontsize - 2)
+                    ax[i].legend(bbox_to_anchor=(1.04, 0), loc="lower left", fontsize=base_fontsize - 2, framealpha=0.5)
                 else:
-                    ax[i].legend(loc="best", fontsize=base_fontsize - 2)
+                    ax[i].legend(loc="best", fontsize=base_fontsize - 2, framealpha=0.5)
             elif labels is True:
-                ax[i].legend(loc="best", fontsize=base_fontsize - 2)
+                ax[i].legend(loc="best", fontsize=base_fontsize - 2, framealpha=0.5)
 
     gs.tight_layout(fig, pad=4, w_pad=1, h_pad=1)
 
