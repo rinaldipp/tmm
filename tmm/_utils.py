@@ -6,6 +6,14 @@ For further information check the function specific documentation.
 import numpy as np
 import scipy
 
+# Nominal frequencies to calculate octave bands with the 1kHz band as reference using bases 10 or 2
+base_nominal_frequencies = np.array([
+    0.1, 0.125, 0.16, 0.2, 0.25, 0.315, 0.4, 0.5, 0.6, 3., 0.8,
+    1., 1.25, 1.6, 2., 2.5, 3.15, 4., 5., 6.3, 8., 10., 12.5, 16.,
+    20., 25., 31.5, 40., 50., 63., 80., 100., 125., 160., 200., 250.,
+    315., 400., 500., 630., 800., 1000., 1250., 1600., 2000., 2500.,
+    3150., 4000., 5000., 6300., 8000., 10000., 12500., 16000., 20000.
+])
 
 class AirProperties:
     """
@@ -210,6 +218,7 @@ def nth_octave(fraction, fmin=20, fmax=20000):
     # Get starting index 'x' and first center frequency
     x = initindex(limits[0], fr, g, fraction)
     freq = ratio(g, x, fraction) * fr
+    freq = find_nearest(base_nominal_frequencies, freq)[0]
 
     # Get each frequency until reach maximum frequency
     freq_x = 0
@@ -218,6 +227,8 @@ def nth_octave(fraction, fmin=20, fmax=20000):
         x = x + 1
         # New frequency
         freq_x = ratio(g, x, fraction) * fr
+        freq_x = find_nearest(base_nominal_frequencies, freq_x)[0]
+
         # Store new frequency
         freq = np.append(freq, freq_x)
 

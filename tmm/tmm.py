@@ -646,15 +646,16 @@ class TMM:
         if end_correction == "nesterov":
             # Acoustic Absorbers and Diffusers by Trevor Cox and Peter D'Antonio
             # Circular holes in circular pattern
-            delta = 0.8 * (1 - 1.47 * open_area ** (1/2) + 0.47 * open_area ** 1.5)
+            delta = 0.85 * (1 - 1.47 * open_area ** (1/2) + 0.47 * open_area ** (3/2))
             t_corr = 2 * delta * d_meters / 2 + t_meters
         elif end_correction == "jaouen_becot" or end_correction == "jb":
             # Acoustic Absorbers and Diffusers by Trevor Cox and Peter D'Antonio
             # Circular holes in square pattern
-            delta = 0.8 * (1 - 1.13 * open_area ** (1/2) - 0.09 * open_area + 0.27 * open_area ** (3/2))
+            delta = 0.85 * (1 - 1.13 * open_area ** (1/2) - 0.09 * open_area + 0.27 * open_area ** (3/2))
             t_corr = 2 * delta * d_meters / 2 + t_meters
         elif end_correction == "beranek":
             # Leo Beranek - Acoustics
+            # Single hole in an infinite baffle
             t_corr = t_meters + 0.85 * d_meters
         vis = self.air_prop["air_viscosity"]
 
@@ -1229,7 +1230,7 @@ class TMM:
         Calculates the field impedance for a set of angle dependent impedances.
 
         Parameters
-        ----------
+        ----------s0
         z : array
             Multidimensional array with angle dependent set of impedances.
 

@@ -4,8 +4,7 @@ if __name__ == "__main__":
 
     # Define the frequency range, resolution and sound incidence
     treatment = TMM(fmin=20, fmax=5000, df=1, incidence="diffuse", incidence_angle=[0, 78, 1],
-                    # filename="example_perforated_resonator"
-                    filename="ex10"
+                    filename="example_perforated_resonator"
                     )
 
     # Define the layers - from top to bottom
