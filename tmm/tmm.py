@@ -1242,7 +1242,7 @@ class TMM:
         Af1 = A * np.sin(np.deg2rad(self.incidence_angle))
         Af2 = np.sin(np.deg2rad(self.incidence_angle))
         Af_div = Af1 / Af2
-        Af = integrate.simps(Af_div, np.deg2rad(self.incidence_angle))
+        Af = integrate.simpson(Af_div, x=np.deg2rad(self.incidence_angle))
         z_field = 1 / Af
         return z_field
 
