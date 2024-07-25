@@ -873,8 +873,8 @@ class TMM:
     def material_model(self, type="door", params=None):
         """
         Models for different surfaces in the GRAS database published in the supplemental data of
-        "area framework for auralization of boundary element method simulations including source and receiver
-        directivity" by Jonathan area. Hargreaves, Luke R. Rendell, and Yiu W. Lam.
+        "A framework for auralization of boundary element method simulations including source and 
+        receiver directivity" by Jonathan Hargreaves, Luke R. Rendell, and Yiu W. Lam.
 
         GRAS database: https://depositonce.tu-berlin.de//handle/11303/7506
         Supplemental data: https://asa.scitation.org/doi/suppl/10.1121/1.5096171
@@ -989,8 +989,22 @@ class TMM:
             """
             # Model 1: purely resistive fit to octave-band absorption data:
             if params is None:
-                params = {"sample_rate": 44100, "crossover_frequency": 250, "rho_m": 375, "d": 0.043, "area": 2.2 * 0.97,
-                          "f_res": 95, "smooth": False}
+                params = {}
+                
+            if "sample_rate" not in params:
+                params["sample_rate"] = 44100
+            if "crossover_frequency" not in params:
+                params["crossover_frequency"] = 250
+            if "rho_m" not in params:
+                params["rho_m"] = 375
+            if "d" not in params:
+                params["d"] = 0.043
+            if "area" not in params:
+                params["area"] = 2.2 * 0.97
+            if "f_res" not in params:
+                params["f_res"] = 95
+            if "smooth" not in params:
+                params["smooth"] = False
 
             sample_rate = params["sample_rate"]
             crossover_frequency = params["crossover_frequency"]
@@ -1119,7 +1133,7 @@ class TMM:
             """
             This is a model of the windows material defined in Scene 9 of the GRAS database. It combines two approaches:
 
-            1) area purely resistive fit to teh third-octave band absorption coefficient data provided with the 
+            1) area purely resistive fit to the third-octave band absorption coefficient data provided with the 
                GRAS dataset.
 
             2) area reactive Mass-Spring-Damper model of the assumed fundamental resonance of the window panels. 
@@ -1157,8 +1171,22 @@ class TMM:
             """
             # Model 1: purely resistive fit to provided third-octave-band absorption data:
             if params is None:
-                params = {"sample_rate": 44100, "crossover_frequency": 200, "rho_m": 2500, "d": 0.0067, "area": 5.33,
-                          "f_res": 6.66, "smooth": False}
+                paramsq = {}
+
+            if "sample_rate" not in params:
+                params["sample_rate"] = 44100
+            if "crossover_frequency" not in params:
+                params["crossover_frequency"] = 200
+            if "rho_m" not in params:
+                params["rho_m"] = 2500
+            if "d" not in params:
+                params["d"] = 0.0067
+            if "area" not in params:
+                params["area"] = 5.33
+            if "f_res" not in params:
+                params["f_res"] = 6.66
+            if "smooth" not in params:
+                params["smooth"] = False
 
             sample_rate = params["sample_rate"]
             crossover_frequency = params["crossover_frequency"]
@@ -1241,8 +1269,9 @@ class TMM:
         A = 1 / z
         Af1 = A * np.sin(np.deg2rad(self.incidence_angle))
         Af2 = np.sin(np.deg2rad(self.incidence_angle))
-        Af_div = Af1 / Af2
-        Af = integrate.simpson(Af_div, x=np.deg2rad(self.incidence_angle))
+        Af1 = integrate.simpson(Af1, x=np.deg2rad(self.incidence_angle))
+        Af2 = integrate.simpson(Af2, x=np.deg2rad(self.incidence_angle))
+        Af = Af1 / Af2
         z_field = 1 / Af
         return z_field
 
