@@ -1171,7 +1171,7 @@ class TMM:
             """
             # Model 1: purely resistive fit to provided third-octave-band absorption data:
             if params is None:
-                paramsq = {}
+                params = {}
 
             if "sample_rate" not in params:
                 params["sample_rate"] = 44100
