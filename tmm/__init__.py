@@ -1,3 +1,3 @@
 """Transfer Matrix Method tools for acoustic treatment modeling."""
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"

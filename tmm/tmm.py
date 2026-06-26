@@ -17,7 +17,6 @@ import os
 import warnings
 
 import numpy as np
-import numpy.matlib as matlib
 import pandas
 from matplotlib import pyplot as plt
 from scipy import integrate
@@ -175,6 +174,16 @@ class TMM:
         self._layers_stale = False
         self._results_stale = False
         self._stale_reasons = []
+
+    def _broadcast_to_incidence_angles(self, values):
+        """Return a frequency vector as an ``(n_freq, n_angles)`` broadcast view."""
+        values = np.asarray(values)
+        n_freq = len(self.freq)
+        if values.ndim != 1 or values.shape[0] != n_freq:
+            raise ValueError(
+                "values must be a one-dimensional frequency vector with length matching self.freq."
+            )
+        return np.broadcast_to(values[:, None], (n_freq, len(self.incidence_angle)))
 
     def _raise_if_stale_results(self, operation):
         """Raise when an operation would use stale layer matrices or computed results."""
@@ -1103,7 +1112,7 @@ class TMM:
         t_meters = t / 1000  # Convert millimeters to meters
 
         zc = 1j * self.w0 * rho * t_meters / self.s0
-        zc = matlib.repmat(zc, len(self.incidence_angle), 1).T
+        zc = self._broadcast_to_incidence_angles(zc)
 
         ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
         zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
@@ -1264,7 +1273,7 @@ class TMM:
             z_sheet = (c_term * b_term - coupling**2) / denominator
 
         z_sheet = z_sheet / self.s0
-        z_sheet = matlib.repmat(z_sheet, len(self.incidence_angle), 1).T
+        z_sheet = self._broadcast_to_incidence_angles(z_sheet)
         ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
         zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
         Tf = np.array([[ones, z_sheet],
@@ -1488,7 +1497,7 @@ class TMM:
                 mip = 1j * self.w0 * rho * t_meters * (1 - open_area)  # Specific mass impedance of the plate
                 zpp = 1 / (1 / zpp + 1 / mip)
             zpp = zpp / self.s0
-            zpp = matlib.repmat(zpp, len(self.incidence_angle), 1).T
+            zpp = self._broadcast_to_incidence_angles(zpp)
 
             ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
             zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
@@ -1514,7 +1523,7 @@ class TMM:
                 mip = 1j * self.w0 * rho * t_meters * (1 - open_area)  # Specific mass impedance of the plate
                 zpp = 1 / (1 / zpp + 1 / mip)
             zpp = zpp / self.s0
-            zpp = matlib.repmat(zpp, len(self.incidence_angle), 1).T
+            zpp = self._broadcast_to_incidence_angles(zpp)
 
             ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
             zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
@@ -1529,7 +1538,7 @@ class TMM:
             """
             zpp = self._bessel_ingard_circular_sheet_impedance(t_meters, d_meters, open_area, rho=rho)
             zpp = zpp / self.s0
-            zpp = matlib.repmat(zpp, len(self.incidence_angle), 1).T
+            zpp = self._broadcast_to_incidence_angles(zpp)
 
             ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
             zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
@@ -1548,8 +1557,8 @@ class TMM:
             """
             kc, zc = self.viscothermal_circular(d_meters)
             zc = zc / open_area
-            kc = matlib.repmat(kc, len(self.incidence_angle), 1).T
-            zc = matlib.repmat(zc, len(self.incidence_angle), 1).T
+            kc = self._broadcast_to_incidence_angles(kc)
+            zc = self._broadcast_to_incidence_angles(zc)
 
             Tp = np.array([[np.cos(kc * t_corr), 1j * zc / self.s0 * np.sin(kc * t_corr)],
                            [1j * self.s0 / zc * np.sin(kc * t_corr), np.cos(kc * t_corr)]])
@@ -1632,7 +1641,7 @@ class TMM:
             zs = 1 / (1 / zs + 1 / mip)
         zs = zs / self.s0
 
-        zs = matlib.repmat(zs, len(self.incidence_angle), 1).T
+        zs = self._broadcast_to_incidence_angles(zs)
 
         ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
         zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
