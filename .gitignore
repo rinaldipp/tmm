@@ -1,7 +1,52 @@
-# VS Code files
+# Editor / OS files
 .vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
 
-# Data files
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.ruff_cache/
+.cache/
+
+# Virtual environments
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+MANIFEST
+
+# Test / coverage outputs
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.tox/
+.nox/
+.hypothesis/
+
+# Local generated files and scratch outputs
+tmp/
+notebooks/
+versions/
+
+# Heavy/generated acoustic data exports
 *.pkl
 *.pickle
 *.mat
@@ -9,146 +54,9 @@
 *.hdf5
 *.h5
 *.wav
-*.txt
 *.xlsx
-*.csv
 *.msh
 *.zip
-*.png
-notebooks/*
-versions/*
 
-# All the python stuff
-*.pyc
-*.cpython-*.pyc
-
-# DS
-*.DS_Store
-
-# System files
-*.swp
-
-# Byte-compiled / optimized / DLL files
-__pycache__/*
-pytta/__pycache__/*
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-#  Usually these files are written by git python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/*
-docs_fonte/*
-docs/build/*
-
-# PyBuilder
-target/
-
-# PyCharm
-.idea/*
-
-# Jupyter Notebook
-.ipynb_checkpoints/*
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-.python-version
-
-# celery beat schedule file
-celerybeat-schedule
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.venv
-env/*
-venv/*
-ENV/*
-env.bak/*
-venv.bak/*
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# DS
-.DS_Store
+# Jupyter
+.ipynb_checkpoints/

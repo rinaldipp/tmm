@@ -1,13 +1,33 @@
-""""
-Data saving module.
-
-This module receives organized raw data and saves it to HDF5 files through its functions.
-
-For further information check the function specific documentation.
 """
-import numpy as np
+HDF5 persistence helpers.
+
+This module stores Python object attributes and nested dictionaries in HDF5
+files. The helpers are used by ``TMM.save()`` and ``TMM.load()`` as a
+package-internal checkpoint format.
+"""
+
+from pathlib import Path
 import time
+
 import h5py
+import numpy as np
+
+
+def _encode_key(key):
+    """Return a HDF5-safe representation of a dictionary key."""
+    return str(key).replace("/", "_div_")
+
+
+def _decode_key(key):
+    """Restore a dictionary key without executing arbitrary text."""
+    decoded = key.replace("_div_", "/")
+    try:
+        integer = int(decoded)
+    except ValueError:
+        return decoded
+    if str(integer) == decoded:
+        return integer
+    return decoded
 
 
 def save_dict_to_hdf5(dic, key, h5file):
@@ -23,7 +43,8 @@ def save_dict_to_hdf5(dic, key, h5file):
     h5file : h5py.File
         Output .h5 file that is already open.
     """
-    recursively_save_dict_contents_to_group(h5file, key + '/', dic)
+    group = h5file.create_group(_encode_key(key))
+    recursively_save_dict_contents_to_group(h5file, group.name + "/", dic)
 
 
 def recursively_save_dict_contents_to_group(h5file, path, dic):
@@ -40,12 +61,13 @@ def recursively_save_dict_contents_to_group(h5file, path, dic):
         Python dictionary that will be saved into the h5 file.
     """
     for key, item in dic.items():
+        encoded_key = _encode_key(key)
         if isinstance(item, dict):
-            recursively_save_dict_contents_to_group(h5file, path + str(key) + '/', item if item is not None else "None")
+            group_path = path + encoded_key
+            h5file.create_group(group_path)
+            recursively_save_dict_contents_to_group(h5file, group_path + "/", item)
         else:
-            if '/' in key:
-                key = key.replace('/', '_div_')
-            h5file[path + key] = item if item is not None else "None"
+            h5file[path + encoded_key] = item if item is not None else "None"
 
 
 def load_dict_from_hdf5(h5file, key):
@@ -63,7 +85,7 @@ def load_dict_from_hdf5(h5file, key):
     -------
     Dictionary that can contain other dictionaries inside.
     """
-    return recursively_load_dict_contents_from_group(h5file, key + '/')
+    return recursively_load_dict_contents_from_group(h5file, _encode_key(key) + "/")
 
 
 def recursively_load_dict_contents_from_group(h5file, path):
@@ -83,15 +105,29 @@ def recursively_load_dict_contents_from_group(h5file, path):
     """
     ans = {}
     for key, item in h5file[path].items():
-        if isinstance(item, h5py._hl.dataset.Dataset):
-            item = parse_dataset_item(item)
-            if '_div_' in key:
-                key = key = key.replace('_div_', '/')
-            ans[key] = item
-        elif isinstance(item, h5py._hl.group.Group):
-            dict_key = eval(key) if len(key) == 1 else key
-            ans[dict_key] = recursively_load_dict_contents_from_group(h5file, path + key + '/')
+        dict_key = _decode_key(key)
+        if isinstance(item, h5py.Dataset):
+            ans[dict_key] = parse_dataset_item(item)
+        elif isinstance(item, h5py.Group):
+            ans[dict_key] = recursively_load_dict_contents_from_group(h5file, path + key + "/")
     return ans
+
+
+def _parse_scalar(value):
+    """Return a Python scalar for scalar HDF5 values."""
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, bytes):
+        value = value.decode("UTF-8")
+    if isinstance(value, str):
+        return None if value == "None" else value
+    if isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        return float(value)
+    return value
 
 
 def parse_dataset_item(item):
@@ -107,26 +143,26 @@ def parse_dataset_item(item):
     -------
     Parsed dataset.
     """
-    item = np.array(item, dtype=item.dtype)
-    if item.dtype == 'object':
-        item = item.tolist().decode('UTF-8')
-        if item == 'None':
-            item = None
-    elif isinstance(item, list):
-        item = item.decode('UTF-8')
-    elif np.issubdtype(item.dtype, np.integer):
-        if item.size == 1:
-            item = int(item)
-        else:
-            item = item.tolist()
-    elif np.issubdtype(item.dtype, float) and item.shape == ():
-        item = float(item)
-    elif np.issubdtype(item.dtype, bool):
-        item = bool(item)
-    return item
+    value = item[()]
+    if isinstance(value, np.ndarray):
+        if value.shape == ():
+            return _parse_scalar(value.item())
+        if np.issubdtype(value.dtype, np.bool_):
+            return value.astype(bool).tolist()
+        if np.issubdtype(value.dtype, np.integer):
+            return value.astype(int).tolist()
+        return value
+    return _parse_scalar(value)
 
 
-def save_class_to_hdf5(self, filename='class', ext='.h5', folder=None, timestamp=False):
+def _hdf5_path(filename, ext=".h5", folder=None, timestamp=False):
+    """Return the output or input path for a HDF5 file."""
+    base = Path(folder) if folder is not None else Path.cwd()
+    prefix = time.strftime("%Y%m%d-%H%M_") if timestamp else ""
+    return base / f"{prefix}{filename}{ext}"
+
+
+def save_class_to_hdf5(self, filename="class", ext=".h5", folder=None, timestamp=False):
     """
     Saves a Class into a HDF5 file.
 
@@ -143,30 +179,17 @@ def save_class_to_hdf5(self, filename='class', ext='.h5', folder=None, timestamp
     timestamp : bool, optional
         Boolean to apply timestamping to the output filename.
     """
-    timestr = time.strftime("%Y%m%d-%H%M_")
+    outfile = _hdf5_path(filename, ext=ext, folder=folder, timestamp=timestamp)
 
-    if folder is not None:
-        if timestamp is True:
-            outfile = folder + timestr + filename + ext
-        else:
-            outfile = folder + filename + ext
-    else:
-        if timestamp is True:
-            outfile = timestr + filename + ext
-        else:
-            outfile = filename + ext
-
-    with h5py.File(outfile, 'w') as hdf:
+    with h5py.File(outfile, "w") as hdf:
         for attr, value in vars(self).items():
-            if isinstance(value, dict) is False and value is not None:
-                hdf[attr] = value
-            elif value is None:
-                hdf[attr] = 'None'
-            elif isinstance(value, dict) is True:
+            if isinstance(value, dict):
                 save_dict_to_hdf5(value, attr, hdf)
+            else:
+                hdf[attr] = value if value is not None else "None"
 
 
-def load_class_from_hdf5(self, filename, ext='.h5', folder=None):
+def load_class_from_hdf5(self, filename, ext=".h5", folder=None):
     """
     Loads Class attributes form HDF5 file.
 
@@ -181,10 +204,7 @@ def load_class_from_hdf5(self, filename, ext='.h5', folder=None):
     folder : None or string, optional
         Input folder. If 'None' is passed the current folder is used.
     """
-    if folder is not None:
-        infile = folder + filename + ext
-    else:
-        infile = filename + ext
+    infile = _hdf5_path(filename, ext=ext, folder=folder, timestamp=False)
 
     with h5py.File(infile, "r") as hdf:
         for key in hdf.keys():

@@ -15,13 +15,122 @@ from matplotlib import style, ticker
 
 
 def set_style():
-    """Sets the matplotlib style."""
+    """Set the Matplotlib style used by the package plots."""
     try:
-        style.use("seaborn-colorblind")
-    except OSError:
         style.use("seaborn-v0_8-colorblind")
+    except OSError:
+        style.use("seaborn-colorblind")
     else:
         pass
+
+
+def _treatment_label(tmm):
+    """Return the human-facing treatment label."""
+    return tmm.display_name or tmm.filename
+
+
+def _label_prefix(tmm, labels, single_treatment):
+    """Return the legend prefix used for multi-treatment plots."""
+    if labels == "full" and not single_treatment:
+        label = _treatment_label(tmm)
+        return f"{label} | " if label else ""
+    return ""
+
+
+def _palette_color(index):
+    """Return a color from the active Matplotlib color cycle."""
+    colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    if not colors:
+        return None
+    return colors[index % len(colors)]
+
+
+def _primary_plot_color(tmm, single_treatment):
+    """Return the primary curve color for a treatment."""
+    if not single_treatment:
+        return tmm.color
+    return tmm.color or _palette_color(0)
+
+
+def _secondary_plot_color(single_treatment):
+    """Return the secondary/reference color used in single-treatment plots."""
+    return _palette_color(1) if single_treatment else None
+
+
+def _absorption_curve_label(tmm, compact=False):
+    """Return an absorption legend label that describes the plotted curve."""
+    if tmm.incidence == "diffuse":
+        if compact:
+            return "Paris Alpha" if tmm.diffuse_method == "paris" else "Field Alpha"
+        angle_span = f"{min(tmm.incidence_angle):0.0f} - {max(tmm.incidence_angle):0.0f} deg"
+        method = "Paris" if tmm.diffuse_method == "paris" else "Field"
+        return f"Diffuse {method} Alpha ({angle_span})"
+    if tmm.incidence == "angle":
+        return f"{tmm.incidence_angle[0]:0.0f} deg" if compact else f"Incidence at {tmm.incidence_angle[0]:0.0f} deg"
+    return "Normal" if compact else "Normal Incidence"
+
+
+def _reference_angle_label(tmm, compact=False):
+    """Return the reference-angle label used with diffuse plots."""
+    if np.isclose(tmm.incidence_angle[0], 0):
+        return "Normal" if compact else "Normal Incidence"
+    return f"{tmm.incidence_angle[0]:0.2f} deg" if compact else f"Incidence at {tmm.incidence_angle[0]:0.2f} deg"
+
+
+def _peak_label(tmm, single_treatment):
+    """Return a concise absorption-peak marker label."""
+    if single_treatment:
+        return f"Peak at {tmm.first_peak[0]} Hz"
+    return f"{_treatment_label(tmm)} | Peak at {tmm.first_peak[0]} Hz"
+
+
+def _title_with_display_name(base_title, tmms):
+    """Add display_name to single-treatment plot titles only."""
+    if len(tmms) == 1 and tmms[0].display_name:
+        return f"{base_title} | {tmms[0].display_name}"
+    return base_title
+
+
+def _uses_paris_absorption_only(tmm):
+    """Return True when diffuse Paris has no corresponding diffuse impedance."""
+    return tmm.incidence == "diffuse" and tmm.diffuse_method == "paris"
+
+
+def _add_paris_impedance_note(axis, base_fontsize):
+    """Annotate impedance/admittance panels when Paris absorption-only averaging is used."""
+    if getattr(axis, "_paris_absorption_note", False):
+        return
+    axis.text(
+        0.5,
+        0.5,
+        "Diffuse Paris averaging is absorption-only.\n"
+        "No diffuse impedance/admittance curve is plotted.",
+        transform=axis.transAxes,
+        ha="center",
+        va="center",
+        fontsize=base_fontsize - 1,
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "edgecolor": "0.65", "alpha": 0.85},
+    )
+    axis._paris_absorption_note = True
+
+
+def _place_legend(axis, legend, orientation, base_fontsize):
+    """Place a legend when the axis has labeled artists."""
+    handles, labels = axis.get_legend_handles_labels()
+    if not handles:
+        return
+    if legend == "outside":
+        axis.legend(
+            bbox_to_anchor=(1.015, 1.0),
+            loc="upper left",
+            fontsize=base_fontsize - 2,
+            framealpha=0.5,
+            borderaxespad=0,
+        )
+    elif legend == "inside":
+        axis.legend(loc="best", fontsize=base_fontsize - 2, framealpha=0.5)
+    else:
+        raise ValueError("legend must be either 'inside' or 'outside'.")
 
 
 def save_matplotlib_fig(fig, filename, project_folder, timestamp=False, subfolder="", ext=".png", **kwargs):
@@ -68,7 +177,25 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                   labels=True, orientation="vertical", base_fontsize=12, xtype="log", legend="inside", save_fig=False,
                   project_folder=None, filename=None,  **kwargs):
     """
-    Plots impedance, admittance, absorption and scattering coefficients with Matplotlib.
+    Plot acoustic response data with Matplotlib.
+
+    The function can plot one or more ``TMM`` objects on shared axes. For
+    single-treatment plots, ``display_name`` is appended to the subplot title
+    when available and ``color`` is used as the primary treatment curve color.
+    If no color is set, the first color in the active Matplotlib color cycle is
+    used. Secondary reference curves in single-treatment plots, such as the
+    normal-incidence curve shown beside a diffuse-incidence result, use the
+    second color in the active color cycle.
+
+    For multi-treatment plots, ``display_name`` falls back to ``filename`` and
+    is used as the legend prefix when ``labels="full"``. Each treatment's
+    ``color`` still controls its own curves when supplied.
+
+    Diffuse Paris averaging is an absorption-only calculation. When the object
+    was computed with ``incidence="diffuse"`` and ``diffuse_method="paris"``,
+    impedance and admittance subplots are left empty and annotated rather than
+    showing field-impedance values that do not correspond to the selected
+    diffuse absorption method.
 
     Parameters
     ----------
@@ -83,22 +210,24 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
     figsize : tuple, optional
         Figure size.
     plots : list, optional
-        List of strings with the desired plots - 'z' for impedance, 'y' for admittance, 'alpha' for absorption
-        coefficient and 'scat' for scattering coefficient.
+        List of strings with the desired plots: ``"z"`` for impedance,
+        ``"y"`` for admittance, ``"alpha"`` for absorption coefficient, and
+        ``"scat"`` for scattering coefficient.
     max_mode : bool, optional
         Option to identify first absorption peak if any.
     show_incidence : bool, optional
         Option to display both normal and diffuse incidence absorption curves.
     labels : bool or str, optional
-        Option to display the full filename of the TMM object in the label.
+        Option to display plot labels. Use ``"full"`` to include treatment
+        names in multi-treatment legends.
     orientation : str, optional
-        Stacking orientation of the subplot - 'vertical' or 'horizontal'.
+        Stacking orientation of the subplot: ``"vertical"`` or ``"horizontal"``.
     base_fontsize : int, optional
         Base font size.
     xtype : string, optional
-        Frequency axis type - 'linear' or 'log'.
+        Frequency axis type: ``"linear"`` or ``"log"``.
     legend : string, optional
-        Legend placement option - 'inside' or 'outside'.
+        Legend placement option: ``"inside"`` or ``"outside"``.
     save_fig : bool, optional
         Option to save figure as static image.
     project_folder : str
@@ -107,18 +236,19 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
     filename : str
         String that will be used as the full or partial file name.
     kwargs : keyword arguments, optional
-        See tmm._plot.save_matplotlib_fig.
+        See ``tmm._plot.save_matplotlib_fig``.
 
     Returns
     -------
-    Matplolib Figure, list of axes Axes and GridSpec objects.
+    Matplotlib Figure, list of Axes and GridSpec objects.
     """
+    set_style()
     if plots is None:
         plots = ["z", "y", "alpha"]
     if fig is None:
         fig = plt.figure(figsize=figsize)
     if ax is None:
-        ax = [None for i in range(len(plots))]
+        ax = [None for _ in range(len(plots))]
     if gs is None:
         if orientation == "vertical":
             gs = gridspec.GridSpec(len(plots), 1)
@@ -127,26 +257,32 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
         else:
             raise ValueError("Orientation must be either 'vertical' or 'horizontal'.")
 
+    single_treatment = len(tmms) == 1
+    common_fmin = min(float(np.min(tmm.freq)) for tmm in tmms)
+    common_fmax = max(float(np.max(tmm.freq)) for tmm in tmms)
+
     for tmm in tmms:
-        if labels == "full" and show_incidence:
-            label_name = "" if tmm._filename is None else tmm.filename + " | "
-        elif labels == "full":
-            label_name = "" if tmm._filename is None else tmm.filename
-        else:
-            label_name = ""
+        label_name = _label_prefix(tmm, labels, single_treatment)
+        primary_color = _primary_plot_color(tmm, single_treatment)
+        secondary_color = _secondary_plot_color(single_treatment)
         i = 0
+
         if "z" in plots or "Z" in plots:
             if ax[i] is None:
                 if orientation == "vertical":
                     ax[i] = plt.subplot(gs[i, 0])
                 elif orientation == "horizontal":
                     ax[i] = plt.subplot(gs[0, i])
-            ax[i].set_title(r"Normalized Surface Impedance ($Z$)", fontsize=base_fontsize)
-            ax[i].set_ylabel(r"$Z$ [Pa·s/m³]", fontsize=base_fontsize - 2)
-            ax[i].plot(tmm.freq, np.real(tmm.z_norm), linewidth=2, label=label_name + "Real", c=tmm.color,
-                           linestyle='-')
-            ax[i].plot(tmm.freq, np.imag(tmm.z_norm), linewidth=2, label=label_name + "Imag.", c=tmm.color,
-                           linestyle='--')
+            ax[i].set_title(_title_with_display_name(r"Normalized Surface Impedance ($Z$)", tmms),
+                            fontsize=base_fontsize)
+            ax[i].set_ylabel(r"$Z$ [Pa.s/m3]", fontsize=base_fontsize - 2)
+            if _uses_paris_absorption_only(tmm):
+                _add_paris_impedance_note(ax[i], base_fontsize)
+            else:
+                ax[i].plot(tmm.freq, np.real(tmm.z_norm), linewidth=2, label=label_name + "Real", c=tmm.color,
+                           linestyle="-")
+                ax[i].plot(tmm.freq, np.imag(tmm.z_norm), linewidth=2, label=label_name + "Imag.", c=tmm.color,
+                           linestyle="--")
             i += 1
 
         if "y" in plots or "Y" in plots:
@@ -155,12 +291,16 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                     ax[i] = plt.subplot(gs[i, 0])
                 elif orientation == "horizontal":
                     ax[i] = plt.subplot(gs[0, i])
-            ax[i].set_title(r"Normalized Surface Admittance ($Y$)", fontsize=base_fontsize)
-            ax[i].set_ylabel(r"$Y$ [m³/Pa·s]", fontsize=base_fontsize - 1)
-            ax[i].plot(tmm.freq, np.real(tmm.y_norm), linewidth=2, label=label_name + "Real", c=tmm.color,
-                           linestyle='-')
-            ax[i].plot(tmm.freq, np.imag(tmm.y_norm), linewidth=2, label=label_name + "Imag.", c=tmm.color,
-                           linestyle='--')
+            ax[i].set_title(_title_with_display_name(r"Normalized Surface Admittance ($Y$)", tmms),
+                            fontsize=base_fontsize)
+            ax[i].set_ylabel(r"$Y$ [m3/Pa.s]", fontsize=base_fontsize - 1)
+            if _uses_paris_absorption_only(tmm):
+                _add_paris_impedance_note(ax[i], base_fontsize)
+            else:
+                ax[i].plot(tmm.freq, np.real(tmm.y_norm), linewidth=2, label=label_name + "Real", c=tmm.color,
+                           linestyle="-")
+                ax[i].plot(tmm.freq, np.imag(tmm.y_norm), linewidth=2, label=label_name + "Imag.", c=tmm.color,
+                           linestyle="--")
             i += 1
 
         if "alpha" in plots or "abs" in plots:
@@ -169,33 +309,28 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                     ax[i] = plt.subplot(gs[i, 0])
                 elif orientation == "horizontal":
                     ax[i] = plt.subplot(gs[0, i])
-            ax[i].set_title(r"Absorption Coefficient ($\alpha$)", fontsize=base_fontsize, loc="left")
+            ax[i].set_title(_title_with_display_name(r"Absorption Coefficient ($\alpha$)", tmms),
+                            fontsize=base_fontsize,
+                            loc="left" if single_treatment else "center")
             ax[i].set_ylabel(r"$\alpha$ [-]", fontsize=base_fontsize - 1)
-            if show_incidence:
-                if tmm.incidence == "diffuse" and "material_model" not in tmm.filename:
-                    ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, c=tmm.color,
-                                   label=label_name + "Diffuse Incidence " +
-                                         f"({min(tmm.incidence_angle):0.0f}° - {max(tmm.incidence_angle):0.0f}°)")
-                    if np.round(tmm.incidence_angle[0]) == 0:
-                        ax[i].plot(tmm.freq, tmm.alpha_angle(), linewidth=2, c=tmm.color,
-                                       label=label_name + "Normal Incidence", linestyle="--")
-                    else:
-                        ax[i].plot(tmm.freq, tmm.alpha_angle(), linewidth=2, c=tmm.color,
-                                       label=label_name + f"Incidence at {tmm.incidence_angle[0]:0.0f}°",
-                                       linestyle="--")
-                else:
-                    ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, label=label_name,
-                                   c=tmm.color)
+            if show_incidence and tmm.incidence == "diffuse" and "material_model" not in (tmm.filename or ""):
+                ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, c=primary_color,
+                           label=label_name + _absorption_curve_label(tmm, compact=not single_treatment))
+                ax[i].plot(tmm.freq, tmm.alpha_angle(), linewidth=2,
+                           c=secondary_color if single_treatment else tmm.color,
+                           label=label_name + _reference_angle_label(tmm, compact=not single_treatment),
+                           linestyle="--")
             else:
-                ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, label=label_name, c=tmm.color)
-            if max_mode and tmm.first_peak[0] != max(tmm.freq):
+                curve_label = (label_name + _absorption_curve_label(tmm, compact=True)
+                               if label_name else _absorption_curve_label(tmm))
+                ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, label=curve_label, c=primary_color)
+            if max_mode and not np.isclose(tmm.first_peak[0], max(tmm.freq)):
                 ax[i].axvline(x=tmm.first_peak[0],
-                              label=f"Resonance at {tmm.first_peak[0]} Hz",
+                              label=_peak_label(tmm, single_treatment),
                               linestyle=":",
-                              color="green")
+                              color=secondary_color or _palette_color(1))
             ax[i].set_ylim([-0.1, 1.1])
             ax[i].yaxis.set_ticks(np.arange(0, 1.01, 0.1))
-            ax[i].set_yticklabels(np.arange(0, 1.01, 0.1))
             ax[i].yaxis.set_major_formatter(ticker.FormatStrFormatter('%0.1f'))
             i += 1
 
@@ -205,47 +340,51 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                     ax[i] = plt.subplot(gs[i, 0])
                 elif orientation == "horizontal":
                     ax[i] = plt.subplot(gs[0, i])
-            ax[i].set_title(r"Scattering Coefficient ($s$)", fontsize=base_fontsize)
+            ax[i].set_title(_title_with_display_name(r"Scattering Coefficient ($s$)", tmms),
+                            fontsize=base_fontsize)
             ax[i].set_ylabel(r"$s$ [-]", fontsize=base_fontsize - 1)
-            ax[i].plot(tmm.freq, tmm.scat, linewidth=2, label=label_name, c=tmm.color)
+            curve_label = label_name.rstrip(" | ") if label_name else "Scattering Coefficient"
+            ax[i].plot(tmm.freq, tmm.scat, linewidth=2, label=curve_label, c=primary_color)
             ax[i].set_ylim([-0.1, 1.1])
             ax[i].yaxis.set_ticks(np.arange(0, 1.01, 0.1))
-            ax[i].set_yticklabels(np.arange(0, 1.01, 0.1))
             ax[i].yaxis.set_major_formatter(ticker.FormatStrFormatter('%0.1f'))
             i += 1
 
-        for i in range(len(ax)):
-            ax[i].set_xlabel("Frequency [Hz]", fontsize=base_fontsize - 1)
-            ax[i].set_xscale(xtype)
-            ax[i].set_xlim([(np.min(tmm.freq)), (np.max(tmm.freq))])
-            ax[i].get_xaxis().set_major_formatter(ticker.ScalarFormatter())
-            ax[i].get_xaxis().set_minor_formatter(ticker.ScalarFormatter())
-            ax[i].tick_params(which="minor", length=5, rotation=-90, axis="x")
-            ax[i].tick_params(which="major", length=5, rotation=-90, axis="x")
-            ax[i].tick_params(axis="both", which="both", labelsize=base_fontsize - 2)
-            ax[i].minorticks_on()
-            ax[i].grid("minor")
+        for axis in ax:
+            if axis is None:
+                continue
+            axis.set_xlabel("Frequency [Hz]", fontsize=base_fontsize - 1)
+            axis.set_xscale(xtype)
+            axis.set_xlim(common_fmin, common_fmax)
+            axis.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
+            axis.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())
+            axis.tick_params(which="minor", length=5, rotation=-90, axis="x")
+            axis.tick_params(which="major", length=5, rotation=-90, axis="x")
+            axis.tick_params(axis="both", which="both", labelsize=base_fontsize - 2)
+            axis.minorticks_on()
+            axis.grid("minor")
 
-            if labels == "full" and orientation == "vertical":
-                if legend == "outside":
-                    ax[i].legend(bbox_to_anchor=(1.04, 0), loc="lower left", fontsize=base_fontsize - 2, framealpha=0.5)
-                else:
-                    ax[i].legend(loc="best", fontsize=base_fontsize - 2, framealpha=0.5)
-            elif labels is True:
-                ax[i].legend(loc="best", fontsize=base_fontsize - 2, framealpha=0.5)
+            if labels == "full" or labels is True:
+                _place_legend(axis, legend, orientation, base_fontsize)
 
-    gs.tight_layout(fig, pad=4, w_pad=1, h_pad=1)
+    if legend == "outside":
+        if orientation == "horizontal":
+            gs.tight_layout(fig, pad=3, w_pad=8, h_pad=1, rect=[0, 0, 0.90, 1])
+        else:
+            gs.tight_layout(fig, pad=3, w_pad=1, h_pad=1, rect=[0, 0, 0.80, 1])
+    else:
+        gs.tight_layout(fig, pad=3, w_pad=1, h_pad=1)
 
     if save_fig:
         filename = filename if filename is not None else "acoustic_data"
         project_folder = project_folder if project_folder is not None else os.getcwd()
         if "subfolder" not in kwargs:
             kwargs["subfolder"] = "Treatments"
+        kwargs.setdefault("transparent", False)
+        kwargs.setdefault("facecolor", "white")
         save_matplotlib_fig(fig, filename, project_folder, **kwargs)
 
     return fig, ax, gs
-
-
 def oct_filter(narrowbad_freq, narrowband_value, freq_bands, filtered_value, n_oct, y_label, x_scale="log",
                figsize=(16, 9), save_fig=False, filename=None, project_folder=None, base_fontsize=12, **kwargs):
     """
