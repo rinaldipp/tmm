@@ -185,6 +185,14 @@ class TMM:
             )
         return np.broadcast_to(values[:, None], (n_freq, len(self.incidence_angle)))
 
+    @staticmethod
+    def _trapezoidal_integral(y, x, axis=-1):
+        """Integrate by the trapezoidal rule across NumPy 1.x and 2.x APIs."""
+        integrator = getattr(np, "trapezoid", None)
+        if integrator is None:
+            integrator = np.trapz
+        return integrator(y, x, axis=axis)
+
     def _raise_if_stale_results(self, operation):
         """Raise when an operation would use stale layer matrices or computed results."""
         if getattr(self, "_layers_stale", False):
@@ -705,13 +713,13 @@ class TMM:
         angles = np.asarray(angles, dtype=float)
         angles_rad = np.deg2rad(angles)
         weights = np.sin(angles_rad) * np.cos(angles_rad)
-        denominator = np.trapz(weights, angles_rad)
+        denominator = self._trapezoidal_integral(weights, angles_rad)
         angle_alpha = []
         for angle_idx, angle in enumerate(angles):
             _, alpha = self.reflection_and_absorption_coefficient(z_angle[:, angle_idx], angle=angle)
             angle_alpha.append(np.asarray(alpha).reshape(-1))
         angle_alpha = np.column_stack(angle_alpha)
-        return np.trapz(angle_alpha * weights[None, :], angles_rad, axis=1) / denominator
+        return self._trapezoidal_integral(angle_alpha * weights[None, :], angles_rad, axis=1) / denominator
 
     def equivalent_fluid_model(self, sigma, model="mac", fibre_type=1, porosity=0.95, tortuosity=1.0):
         """
