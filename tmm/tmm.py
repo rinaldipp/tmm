@@ -49,7 +49,7 @@ class TMM:
     """
     def __init__(self, fmin=20, fmax=5000, df=1, incidence="diffuse", incidence_angle=None, project_folder=None,
                  filename=None, display_name=None, color=None, x_scale="lin", diffuse_method="field", s0=1.0,
-                 srad=None):
+                 srad=None, freq=None):
         """
         Parameters
         ----------
@@ -87,6 +87,11 @@ class TMM:
         srad : float, optional
             Rear termination area in square meters. For ``backing='radiation'`` this is interpreted as the area
             of the circular radiating aperture. If omitted, ``srad`` defaults to ``s0``.
+        freq : array_like, optional
+            Explicit frequency vector in Hz. When provided it takes precedence over ``fmin``/``fmax``/``df`` and
+            ``fmin``/``fmax`` are derived from its endpoints. The spacing may be non-uniform because the TMM
+            evaluates every frequency independently. When omitted, the uniform grid built from
+            ``fmin``/``fmax``/``df`` is used.
         """
         if diffuse_method not in {"paris", "field"}:
             raise ValueError("diffuse_method must be 'paris' or 'field'.")
@@ -97,10 +102,15 @@ class TMM:
         if srad is None:
             srad = s0
 
-        self._fmin = fmin
-        self._fmax = fmax
-        self._freq = None
         self._df = df
+        if freq is None:
+            self._fmin = fmin
+            self._fmax = fmax
+            self._freq = None
+        else:
+            self._freq = self._as_frequency_vector(freq)
+            self._fmin = float(self._freq[0])
+            self._fmax = float(self._freq[-1])
         self._s0 = self._validate_positive_area(s0, "s0")
         self._srad = self._validate_positive_area(srad, "srad")
         self._air_prop = utils.AirProperties().standardized_c0_rho0()
@@ -204,6 +214,17 @@ class TMM:
             details = f" Reasons: {reasons}." if reasons else ""
             raise RuntimeError(f"{operation} cannot use stale computed results. Call compute() or rebuild() first."
                                f"{details}")
+
+    @staticmethod
+    def _as_frequency_vector(freq):
+        """Validate an explicit frequency vector (Hz): non-empty, 1-D, strictly ascending.
+        Spacing may be non-uniform — TMM evaluates each frequency independently."""
+        freq = np.asarray(freq, dtype=float).ravel()
+        if freq.size == 0:
+            raise ValueError("freq must contain at least one frequency in Hz.")
+        if freq.size > 1 and np.any(np.diff(freq) <= 0):
+            raise ValueError("freq must be strictly ascending.")
+        return freq
 
     @staticmethod
     def _validate_positive_area(value, name):
@@ -359,8 +380,10 @@ class TMM:
 
     @freq.setter
     def freq(self, new_freq):
-        """Sets frequency values."""
-        self._freq = new_freq
+        """Set an explicit frequency vector (Hz). Spacing may be non-uniform."""
+        self._freq = self._as_frequency_vector(new_freq)
+        self._fmin = float(self._freq[0])
+        self._fmax = float(self._freq[-1])
         self._mark_layers_stale("freq was changed after model data existed.")
 
     @property
