@@ -34,9 +34,13 @@ class AirProperties:
         p0 : float, optional
             Atmospheric pressure in Pascal [Pa]
         """
-        self.t0 = np.array(t0, dtype=np.float32)
-        self.rh = np.array(rh, dtype=np.float32)
-        self.p0 = np.array(p0, dtype=np.float32)
+        # Double precision is required here. The saturated vapour pressure below cancels terms of order
+        # 1e6 down to order 1e3, which costs roughly three decimal digits, and the remaining properties
+        # are derived from it. In single precision that leaves about four significant digits in pvp and
+        # makes save/load round trips non-reproducible, because HDF5 scalars are read back as float64.
+        self.t0 = np.array(t0, dtype=np.float64)
+        self.rh = np.array(rh, dtype=np.float64)
+        self.p0 = np.array(p0, dtype=np.float64)
 
     @property
     def temp_kelvin(self):

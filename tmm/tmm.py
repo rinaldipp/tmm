@@ -1374,11 +1374,20 @@ class TMM:
         ``"barrier"`` and ``"barrier_mpp"`` branches use the solid-fraction convention
         ``1j*omega*rho*t*(1 - phi)``.
 
-        ``method="barrier"`` uses the Helmholtz-resonator perforated-sheet impedance form presented by Cox and
-        D'Antonio, *Acoustic Absorbers and Diffusers*, 3rd ed., section 7.3.1. The implemented sheet impedance is
-        ``Zp = Rm + 1j*omega*rho0*t_eff/phi``, where ``phi`` is the open-area ratio and ``Rm`` is the viscous
-        resistance term. If ``rho`` is supplied, a solid-fraction plate-mass approximation
-        ``1j*omega*rho*t*(1 - phi)`` is coupled in parallel with the perforation impedance.
+        ``method="barrier"`` implements the Helmholtz-resonator perforated-sheet impedance of Cox and D'Antonio,
+        *Acoustic Absorbers and Diffusers*, 3rd ed., equation 7.21 (section 7.3.3.3), which combines the acoustic
+        mass of equation 7.6 with the viscous resistance of equation 7.12. The sheet impedance is
+        ``Zp = Rm + 1j*omega*rho0*t_eff/phi``, where ``phi`` is the open-area ratio,
+        ``t_eff = 2*delta*a + t`` for hole radius ``a`` and end-correction factor ``delta``, and
+        ``Rm = sqrt(8*eta*rho0*omega)*(1 + t/(2*a))/phi``. The book writes ``Rm`` with the kinematic viscosity as
+        ``(rho0/phi)*sqrt(8*nu*omega)*(1 + t/(2*a))``; the two forms are equal because ``nu = eta/rho0``, and
+        ``air_prop`` supplies the dynamic viscosity ``eta``. The remaining ``z_s2`` term of equation 7.21 is the
+        impedance below the sheet, which the pressure-jump matrix supplies, and the small viscous mass term of
+        equation 7.6 is omitted, as it is in equation 7.21 itself.
+
+        If ``rho`` is supplied, a solid-fraction plate-mass approximation ``1j*omega*rho*t*(1 - phi)`` is coupled
+        in parallel with the perforation impedance, following the topology of equation 7.16. The book's ``z_mem``
+        there is the full panel mass per unit area; the ``(1 - phi)`` weighting is a package convention.
 
         ``method="barrier_mpp"`` implements Maa's approximate microperforated-panel sheet impedance for circular
         submillimetre perforations. For the pure aperture branch (``rho=None``), the implementation follows Maa
@@ -1429,7 +1438,8 @@ class TMM:
         ``method="eq_fluid"``. If omitted, these two methods use ``"jb"``. Available options are:
         ``"nesterov"``, the circular-pattern correction listed by Cox and D'Antonio; ``"jb"`` /
         ``"jaouen_becot"``, their square-pattern Jaouen-Becot correction; and ``"beranek"``, the single-hole
-        infinite-baffle approximation ``t_eff = t + 0.85*d``. ``method="barrier_mpp"`` uses Maa's internal
+        infinite-baffle approximation ``t_eff = t + 0.85*d``. All three use the 0.85 prefactor given in the book's
+        text and table 7.1. ``method="barrier_mpp"`` uses Maa's internal
         acoustic-mass term, and ``method="bessel_ingard"`` uses the square-cell aperture end-correction term
         described in its formulation above; neither branch uses the ``end_correction`` argument.
 
@@ -1521,7 +1531,10 @@ class TMM:
             zero-thickness pressure-jump element, so the perforated screen is represented by its surface impedance
             rather than by propagation through a finite duct.
             """
-            rm = (self.rho0 / open_area) * np.sqrt(8 * vis * self.w0) * (
+            # Equation 7.12, the resistive term of equation 7.21. The book writes it with the kinematic
+            # viscosity nu, while air_prop["air_viscosity"] is the dynamic viscosity eta. Since nu = eta/rho0,
+            # rho0 belongs inside the root multiplying vis.
+            rm = (1 / open_area) * np.sqrt(8 * vis * self.rho0 * self.w0) * (
                         1 + t_meters / (d_meters))  # Surface resistance
             zpp = (1j / open_area) * t_corr * self.w0 * self.rho0 + rm  # Impedance of perforated plate
             if rho:
