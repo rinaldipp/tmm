@@ -2355,16 +2355,44 @@ class TMM:
             if show_layers:
                 self.show_layers()
 
-    def clear_matrix(self):
-        """Removes matrix data from self.matrix to reduce file size."""
+    def clear_matrix(self, clear_z_angle=False, keep_normal_incidence=True):
+        """Removes matrix data from self.matrix to reduce file size.
+
+        Parameters
+        ----------
+        clear_z_angle : bool, optional
+            Also discard the angle-dependent surface impedance, which dominates the
+            serialized size of a computed object (it holds one complex value per
+            frequency *and* per incidence angle). By default False.
+        keep_normal_incidence : bool, optional
+            When clearing 'z_angle', retain its normal-incidence column so that
+            'alpha_angle()' still returns the true normal-incidence absorption
+            instead of the zero-filled fallback. By default True.
+
+        Notes
+        -----
+        With 'keep_normal_incidence' the retained 'z_angle' has a single column while
+        'incidence_angle' still lists every angle, so 'field_impedance' and
+        'diffuse_absorption_coefficient' must not be re-run on the trimmed object.
+        Both are only used inside 'compute', which reassigns 'z_angle' beforehand.
+        """
         for matrix in self.matrix.keys():
             if "matrix" in list(self.matrix[matrix].keys()):
                 self.matrix[matrix]["matrix"] = None
 
-    def reduce_size(self):
-        """Removes the value of some attributes to reduce file size."""
-        self.clear_matrix()
-        self._z_angle = None
+        if clear_z_angle and self._z_angle is not None:
+            self._z_angle = self._z_angle[:, :1] if keep_normal_incidence else None
+
+    def reduce_size(self, keep_normal_incidence=False):
+        """Removes the value of some attributes to reduce file size.
+
+        Parameters
+        ----------
+        keep_normal_incidence : bool, optional
+            Retain the normal-incidence column of 'z_angle' so that 'alpha_angle()'
+            keeps working. By default False, which discards 'z_angle' entirely.
+        """
+        self.clear_matrix(clear_z_angle=True, keep_normal_incidence=keep_normal_incidence)
 
     def rebuild(self):
         """Rebuild treatment layers to update frequency range."""
