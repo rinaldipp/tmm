@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import time
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -488,9 +489,30 @@ def _angle_label(angle):
     return f"{float(angle):.6g} deg"
 
 
+def _has_angular_data(treatment):
+    """Return True when the treatment stores angle-dependent impedance for every incidence angle."""
+    return len(treatment.stored_angles) > 0
+
+
 def _export_all_frame(treatment):
-    """Return a diagnostic table with all angle-wise and diffuse quantities."""
+    """Return a diagnostic table with all angle-wise and diffuse quantities.
+
+    Treatments that never computed angle-dependent impedance, such as ``material_model()`` results and
+    objects reduced by ``reduce_size()``, fall back to the selected-method table. Building the angle-wise
+    and field-impedance columns for them would read the zero-filled ``z_angle`` fallback and write whole
+    columns of zeros and NaNs that look like computed values.
+    """
     treatment._raise_if_partial_z_angle("save2sheet(export_all=True)")
+    if not _has_angular_data(treatment):
+        warnings.warn(
+            "export_all=True was requested but this treatment stores no angle-dependent impedance, so the "
+            "angle-wise and diffuse field-impedance columns were omitted. The export contains the "
+            "selected-method data instead.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return _selected_data_frame(treatment)
+
     angles = np.asarray(treatment.incidence_angle, dtype=float)
     z_angle = np.asarray(treatment.z_angle, dtype=complex)
     data = {"Frequency [Hz]": treatment.freq}
@@ -522,14 +544,14 @@ def _write_export_all_csv(treatment, output_dir, stem, metadata, conversion):
     paths = {"csv": csv_path}
     if metadata:
         rows = _setup_rows(treatment, conversion)
-        rows.append(
-            (
-                "export_all note",
-                "CSV-only diagnostic export. Includes angle-wise impedance/absorption, field diffuse "
-                "impedance/absorption, and Paris diffuse absorption.",
-                "",
-            )
-        )
+        if _has_angular_data(treatment):
+            note = ("CSV-only diagnostic export. Includes angle-wise impedance/absorption, field diffuse "
+                    "impedance/absorption, and Paris diffuse absorption.")
+        else:
+            note = ("CSV-only diagnostic export. This treatment stores no angle-dependent impedance, so the "
+                    "angle-wise and field diffuse columns were omitted and the selected-method data was "
+                    "written instead.")
+        rows.append(("export_all note", note, ""))
         _write_metadata_csv(metadata_csv_path, rows)
         paths["metadata_csv"] = metadata_csv_path
     return paths
