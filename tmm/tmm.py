@@ -13,6 +13,7 @@ References
 For further information check the function specific documentation.
 """
 import collections
+import copy
 import os
 import warnings
 
@@ -118,6 +119,7 @@ class TMM:
         self._incidence_angle = incidence_angle
         self._z = None
         self._z_angle = None
+        self._z_angle_angles = None
         self._alpha = None
         self._scat = None
         self._matrix = {}
@@ -214,6 +216,47 @@ class TMM:
             details = f" Reasons: {reasons}." if reasons else ""
             raise RuntimeError(f"{operation} cannot use stale computed results. Call compute() or rebuild() first."
                                f"{details}")
+
+    def _has_partial_z_angle(self):
+        """Return True when stored ``z_angle`` columns do not span ``incidence_angle``."""
+        return getattr(self, "_z_angle_angles", None) is not None
+
+    def _stored_z_angle_angles(self):
+        """Return the incidence angles that the stored ``z_angle`` columns correspond to."""
+        retained = getattr(self, "_z_angle_angles", None)
+        if retained is None:
+            return np.asarray(self.incidence_angle, dtype=float)
+        return np.asarray(retained, dtype=float)
+
+    @staticmethod
+    def _match_stored_angles(requested, available, atol=1e-6):
+        """Return ascending, de-duplicated column indices for requested angles in degrees.
+
+        The tolerance absorbs the float error of the ``linspace`` angular grid, including the value just
+        below 90 degrees that the diffuse range substitutes for grazing incidence.
+        """
+        indices = []
+        for angle in requested:
+            matches = np.flatnonzero(np.isclose(available, angle, rtol=0.0, atol=atol))
+            if matches.size == 0:
+                nearest = available[np.argmin(np.abs(available - angle))]
+                raise ValueError(
+                    f"{angle:g} deg is not one of this treatment's incidence angles ({available[0]:g} to "
+                    f"{available[-1]:g} deg, {available.size} values). Nearest available is {nearest:g} deg."
+                )
+            indices.append(int(matches[0]))
+        return np.unique(indices)
+
+    def _raise_if_partial_z_angle(self, operation):
+        """Raise when an operation needs every angle but only a reduced subset is stored."""
+        if not self._has_partial_z_angle():
+            return
+        retained = ", ".join(f"{angle:g}" for angle in self._stored_z_angle_angles())
+        raise RuntimeError(
+            f"{operation} needs angle-dependent impedance for every angle in incidence_angle, but this object "
+            f"came from reduced_copy() and only retains {retained} deg. Call rebuild() to restore the full "
+            f"angular data first."
+        )
 
     @staticmethod
     def _as_frequency_vector(freq):
@@ -466,6 +509,21 @@ class TMM:
     def z_angle(self, new_z_angle):
         """Set angle-dependent surface impedance."""
         self._z_angle = new_z_angle
+        self._z_angle_angles = None
+
+    @property
+    def stored_angles(self):
+        """
+        Return the incidence angles, in degrees, for which angle-dependent impedance is actually stored.
+
+        This matches ``incidence_angle`` for a normally computed treatment. On an object returned by
+        ``reduced_copy()`` it reports only the retained angles, and it is empty when ``z_angle`` was
+        discarded. Column ``i`` of ``z_angle`` corresponds to ``stored_angles[i]``, so this is the honest
+        answer to "which angles does this object still have?" for a trimmed treatment.
+        """
+        if self._z_angle is None:
+            return np.empty(0, dtype=float)
+        return self._stored_z_angle_angles()
 
     @property
     def y(self):
@@ -705,15 +763,18 @@ class TMM:
         Parameters
         ----------
         angle_idx : int, optional
-            Positional index of the desired angle in 'self.incidence_angle'.
+            Positional index of the desired angle in 'self.incidence_angle'. On an object returned by
+            'reduced_copy()' this indexes the retained angles instead, and the reflection is evaluated at
+            the angle those columns were actually computed for.
 
         Returns
         -------
         Angle-dependent absorption coefficient.
         """
+        angles = self._stored_z_angle_angles()
         _, alpha = self.reflection_and_absorption_coefficient(
             self.z_angle[:, angle_idx],
-            angle=self.incidence_angle[angle_idx],
+            angle=angles[angle_idx],
         )
 
         return alpha
@@ -729,11 +790,17 @@ class TMM:
         impedance. Use ``field_impedance()`` when a scalar field-incidence impedance is needed.
         """
         if z_angle is None:
+            self._raise_if_partial_z_angle("diffuse_absorption_coefficient()")
             z_angle = self.z_angle
         if angles is None:
             angles = self.incidence_angle
 
         angles = np.asarray(angles, dtype=float)
+        z_angle = np.asarray(z_angle)
+        if z_angle.ndim != 2 or z_angle.shape[1] != len(angles):
+            raise ValueError(
+                f"z_angle must have one column per angle: got shape {z_angle.shape} for {len(angles)} angles."
+            )
         angles_rad = np.deg2rad(angles)
         weights = np.sin(angles_rad) * np.cos(angles_rad)
         denominator = self._trapezoidal_integral(weights, angles_rad)
@@ -2199,6 +2266,13 @@ class TMM:
         -------
         Field impedance array.
         """
+        z = np.asarray(z)
+        if z.ndim != 2 or z.shape[1] != len(self.incidence_angle):
+            self._raise_if_partial_z_angle("field_impedance()")
+            raise ValueError(
+                f"z must have one column per angle in incidence_angle: got shape {z.shape} for "
+                f"{len(self.incidence_angle)} angles."
+            )
         A = 1 / z
         Af1 = A * np.sin(np.deg2rad(self.incidence_angle))
         Af2 = np.sin(np.deg2rad(self.incidence_angle))
@@ -2365,6 +2439,94 @@ class TMM:
         """Removes the value of some attributes to reduce file size."""
         self.clear_matrix()
         self._z_angle = None
+        self._z_angle_angles = None
+
+    def reduced_copy(self, keep_angles=(0.0,)):
+        """
+        Return a lightweight copy of this treatment for storage or transport.
+
+        The copy carries the layer metadata needed by ``rebuild()`` but not the cached layer transfer
+        matrices, and retains only the selected columns of ``z_angle``. Scalar results are untouched, so
+        ``z``, ``alpha``, and ``z_norm`` stay exact for both diffuse methods; ``alpha_angle()`` stays exact
+        for every retained angle. This object is not modified.
+
+        Parameters
+        ----------
+        keep_angles : sequence of float or None, optional
+            Incidence angles in degrees whose ``z_angle`` columns are retained, in the same units as the
+            ``incidence_angle`` constructor argument. Each value must be one of ``self.incidence_angle``;
+            retained columns are returned in ascending angle order. The default ``(0.0,)`` keeps normal
+            incidence, which is the first angle of both default diffuse ranges. ``None`` discards
+            ``z_angle`` entirely, matching ``reduce_size()``.
+
+        Returns
+        -------
+        TMM
+            A new treatment holding the reduced data.
+
+        Raises
+        ------
+        ValueError
+            If ``keep_angles`` is empty, or names an angle this treatment did not compute. Diffuse ranges
+            that start above zero have no normal-incidence column, so they need an explicit ``keep_angles``.
+
+        Notes
+        -----
+        For ``incidence='normal'`` and ``incidence='angle'`` there is a single angle, so that column always
+        spans ``incidence_angle``, ``keep_angles`` is not consulted, and the copy is a fully functional
+        treatment; the size reduction there comes from dropping the layer matrices alone.
+
+        For ``incidence='diffuse'`` with a proper subset of angles the copy cannot reproduce quantities
+        that integrate over the hemisphere, so ``field_impedance()``, ``diffuse_absorption_coefficient()``,
+        and ``save2sheet(export_all=True)`` raise a descriptive error rather than returning a wrong result.
+        Call ``rebuild()`` to restore the full angular data; it recomputes ``z_angle`` for every angle and
+        clears the reduced marker.
+
+        ``compute()`` cannot run directly on the copy because the layer matrices were dropped. Use
+        ``rebuild()``, which reconstructs them from the layer metadata first.
+        """
+        self._raise_if_stale_results("reduced_copy()")
+
+        source_z_angle = self._z_angle
+        source_angles = self._stored_z_angle_angles()
+
+        if keep_angles is None or source_z_angle is None:
+            new_z_angle = None
+            new_angles = None
+        elif source_z_angle.shape[1] == 1:
+            # A single stored column already spans the angular range, so there is nothing to reduce.
+            new_z_angle = source_z_angle.copy()
+            new_angles = source_angles.copy() if self._has_partial_z_angle() else None
+        else:
+            requested = np.asarray(keep_angles, dtype=float).reshape(-1)
+            if requested.size == 0:
+                raise ValueError(
+                    "keep_angles must name at least one incidence angle in degrees, or be None to drop z_angle."
+                )
+            indices = self._match_stored_angles(requested, source_angles)
+            new_z_angle = source_z_angle[:, indices].copy()
+            retained = source_angles[indices]
+            spans_all = indices.size == source_angles.size
+            new_angles = None if spans_all and not self._has_partial_z_angle() else retained
+
+        # Copy without duplicating the heavy arrays: blank them out, deepcopy the remaining metadata, then
+        # restore this object and attach the reduced data to the copy.
+        stashed_matrices = {}
+        for key, layer in self._matrix.items():
+            if "matrix" in layer:
+                stashed_matrices[key] = layer["matrix"]
+                layer["matrix"] = None
+        self._z_angle = None
+        try:
+            reduced = copy.deepcopy(self)
+        finally:
+            self._z_angle = source_z_angle
+            for key, matrix in stashed_matrices.items():
+                self._matrix[key]["matrix"] = matrix
+
+        reduced._z_angle = new_z_angle
+        reduced._z_angle_angles = new_angles
+        return reduced
 
     def rebuild(self):
         """Rebuild treatment layers to update frequency range."""

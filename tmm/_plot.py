@@ -71,10 +71,20 @@ def _absorption_curve_label(tmm, compact=False):
 
 
 def _reference_angle_label(tmm, compact=False):
-    """Return the reference-angle label used with diffuse plots."""
-    if np.isclose(tmm.incidence_angle[0], 0):
+    """Return the reference-angle label used with diffuse plots.
+
+    The label describes the angle whose impedance is actually stored, which is not necessarily the first
+    angle of ``incidence_angle`` once ``reduced_copy()`` has trimmed the angular data.
+    """
+    angle = tmm.stored_angles[0]
+    if np.isclose(angle, 0):
         return "Normal" if compact else "Normal Incidence"
-    return f"{tmm.incidence_angle[0]:0.2f} deg" if compact else f"Incidence at {tmm.incidence_angle[0]:0.2f} deg"
+    return f"{angle:0.2f} deg" if compact else f"Incidence at {angle:0.2f} deg"
+
+
+def _has_reference_angle_curve(tmm):
+    """Return True when an angle-dependent reference curve can honestly be drawn."""
+    return len(tmm.stored_angles) > 0
 
 
 def _peak_label(tmm, single_treatment):
@@ -313,7 +323,8 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                             fontsize=base_fontsize,
                             loc="left" if single_treatment else "center")
             ax[i].set_ylabel(r"$\alpha$ [-]", fontsize=base_fontsize - 1)
-            if show_incidence and tmm.incidence == "diffuse" and "material_model" not in (tmm.filename or ""):
+            if (show_incidence and tmm.incidence == "diffuse" and "material_model" not in (tmm.filename or "")
+                    and _has_reference_angle_curve(tmm)):
                 ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, c=primary_color,
                            label=label_name + _absorption_curve_label(tmm, compact=not single_treatment))
                 ax[i].plot(tmm.freq, tmm.alpha_angle(), linewidth=2,

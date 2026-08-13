@@ -490,6 +490,7 @@ def _angle_label(angle):
 
 def _export_all_frame(treatment):
     """Return a diagnostic table with all angle-wise and diffuse quantities."""
+    treatment._raise_if_partial_z_angle("save2sheet(export_all=True)")
     angles = np.asarray(treatment.incidence_angle, dtype=float)
     z_angle = np.asarray(treatment.z_angle, dtype=complex)
     data = {"Frequency [Hz]": treatment.freq}
