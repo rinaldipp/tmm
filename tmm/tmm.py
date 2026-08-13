@@ -2354,80 +2354,92 @@ class TMM:
             raise ValueError("backing must be 'rigid', 'radiation', or 'air'.")
 
         if list(self.matrix.keys())[0] != "termination" and "material_model" not in self.filename:
-            self.matrix = dict(collections.OrderedDict(sorted(self.matrix.items())))
-
-            if "rigid_backing" in self.matrix[list(self.matrix.keys())[-1]]:
-                self.matrix.pop(list(self.matrix.keys())[-1])
-                if backing_was_omitted and backing is None:
-                    backing = "rigid"
-
-            first_layer = self.matrix[list(self.matrix.keys())[0]]
-            if (
-                self.incidence == "diffuse"
-                and self.diffuse_method == "field"
-                and isinstance(first_layer, dict)
-                and first_layer.get("type") == "air_layer"
-            ):
-                warnings.warn(
-                    "diffuse_method='field' was computed with a top air layer. Field-incidence impedance averaging "
-                    "is sensitive to the impedance reference plane, so a lossless top air layer can change the "
-                    "field-incidence absorption curve even when angle-wise absorption is unchanged. If you want "
-                    "statistical diffuse absorption, consider diffuse_method='paris'. If the top air layer is only "
-                    "a reference-plane offset, remove it before using diffuse_method='field'.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-
-            Tg = self.matrix[0]["matrix"]
-            for matrix in range(len(self.matrix) - 1):
-                Tg = np.einsum("ijna,jkna->ikna", Tg, self.matrix[matrix + 1]["matrix"])
-
-            Ag = Tg[0, 0]
-            Bg = Tg[0, 1]
-            Cg = Tg[1, 0]
-            Dg = Tg[1, 1]
-
-            if backing == "rigid":
-                # Rigid termination: rear particle velocity is zero, so Zs = S0*A/C.
-                self.z_angle = self.s0 * Ag / Cg
-            elif backing == "radiation":
-                # Low-ka unflanged circular-pipe radiation load.
-                zload = self._unflanged_pipe_radiation_load()
-                self.z_angle = self.s0 * (Ag * zload + Bg) / (Cg * zload + Dg)
-            else:
-                # Air termination used by rigid_backing=False: oblique plane-wave load.
-                theta = np.deg2rad(np.asarray(self.incidence_angle, dtype=float))[None, :]
-                zload = self.z0 / np.cos(theta)
-                zload = zload / self.srad
-                self.z_angle = self.s0 * (Ag * zload + Bg) / (Cg * zload + Dg)
-
-            if self.incidence == "diffuse":
-                zc = self.field_impedance(self._z_angle)
-                alpha = self.diffuse_absorption_coefficient(self._z_angle) if self.diffuse_method == "paris" else None
-            else:
-                zc = self._z_angle[:, 0]
-                if self.incidence == "angle":
-                    _, alpha = self.reflection_and_absorption_coefficient(zc, angle=self.incidence_angle[0])
-                else:
-                    alpha = None
-
-            if not conj:
-                self.z = zc
-            else:
-                self.z = np.conj(zc)
-                self.z_angle = np.conj(self._z_angle)
-            self._alpha = None if alpha is None else np.asarray(alpha, dtype=float).reshape((len(self.freq),))
-
-            self.matrix[len(self.matrix)] = {"type": "backing",
-                                             "rigid_backing": backing == "rigid",
-                                             "backing": backing,
-                                             "diffuse_method": self.diffuse_method,
-                                             "impedance_conjugate": conj,
-                                             }
-            self._clear_stale_state()
+            # The old backing entry is removed below and only re-added once the computation succeeds, so a
+            # failure in between would otherwise leave the treatment without its termination metadata and
+            # make a later rebuild() silently fall back to an air backing.
+            matrix_before_compute = dict(self.matrix)
+            try:
+                self._compute_global_matrix(backing, backing_was_omitted, conj)
+            except BaseException:
+                self.matrix = matrix_before_compute
+                raise
 
             if show_layers:
                 self.show_layers()
+
+    def _compute_global_matrix(self, backing, backing_was_omitted, conj):
+        """Multiply the layer matrices, apply the termination, and store the resulting impedances."""
+        self.matrix = dict(collections.OrderedDict(sorted(self.matrix.items())))
+
+        if "rigid_backing" in self.matrix[list(self.matrix.keys())[-1]]:
+            self.matrix.pop(list(self.matrix.keys())[-1])
+            if backing_was_omitted and backing is None:
+                backing = "rigid"
+
+        first_layer = self.matrix[list(self.matrix.keys())[0]]
+        if (
+            self.incidence == "diffuse"
+            and self.diffuse_method == "field"
+            and isinstance(first_layer, dict)
+            and first_layer.get("type") == "air_layer"
+        ):
+            warnings.warn(
+                "diffuse_method='field' was computed with a top air layer. Field-incidence impedance averaging "
+                "is sensitive to the impedance reference plane, so a lossless top air layer can change the "
+                "field-incidence absorption curve even when angle-wise absorption is unchanged. If you want "
+                "statistical diffuse absorption, consider diffuse_method='paris'. If the top air layer is only "
+                "a reference-plane offset, remove it before using diffuse_method='field'.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+
+        Tg = self.matrix[0]["matrix"]
+        for matrix in range(len(self.matrix) - 1):
+            Tg = np.einsum("ijna,jkna->ikna", Tg, self.matrix[matrix + 1]["matrix"])
+
+        Ag = Tg[0, 0]
+        Bg = Tg[0, 1]
+        Cg = Tg[1, 0]
+        Dg = Tg[1, 1]
+
+        if backing == "rigid":
+            # Rigid termination: rear particle velocity is zero, so Zs = S0*A/C.
+            self.z_angle = self.s0 * Ag / Cg
+        elif backing == "radiation":
+            # Low-ka unflanged circular-pipe radiation load.
+            zload = self._unflanged_pipe_radiation_load()
+            self.z_angle = self.s0 * (Ag * zload + Bg) / (Cg * zload + Dg)
+        else:
+            # Air termination used by rigid_backing=False: oblique plane-wave load.
+            theta = np.deg2rad(np.asarray(self.incidence_angle, dtype=float))[None, :]
+            zload = self.z0 / np.cos(theta)
+            zload = zload / self.srad
+            self.z_angle = self.s0 * (Ag * zload + Bg) / (Cg * zload + Dg)
+
+        if self.incidence == "diffuse":
+            zc = self.field_impedance(self._z_angle)
+            alpha = self.diffuse_absorption_coefficient(self._z_angle) if self.diffuse_method == "paris" else None
+        else:
+            zc = self._z_angle[:, 0]
+            if self.incidence == "angle":
+                _, alpha = self.reflection_and_absorption_coefficient(zc, angle=self.incidence_angle[0])
+            else:
+                alpha = None
+
+        if not conj:
+            self.z = zc
+        else:
+            self.z = np.conj(zc)
+            self.z_angle = np.conj(self._z_angle)
+        self._alpha = None if alpha is None else np.asarray(alpha, dtype=float).reshape((len(self.freq),))
+
+        self.matrix[len(self.matrix)] = {"type": "backing",
+                                         "rigid_backing": backing == "rigid",
+                                         "backing": backing,
+                                         "diffuse_method": self.diffuse_method,
+                                         "impedance_conjugate": conj,
+                                         }
+        self._clear_stale_state()
 
     def clear_matrix(self):
         """Removes matrix data from self.matrix to reduce file size."""
@@ -2938,10 +2950,11 @@ class TMM:
         Save this TMM object as an HDF5 checkpoint.
 
         The file is written to ``{project_folder}/Treatments/{filename}.h5``.
-        The ``Treatments`` folder is created when needed. Before writing,
-        ``reduce_size()`` is called so cached layer transfer matrices are
-        removed from ``self.matrix`` while retaining the metadata needed by
-        ``rebuild()``.
+        The ``Treatments`` folder is created when needed. The checkpoint holds
+        the reduced form produced by ``reduced_copy(keep_angles=None)``: cached
+        layer transfer matrices and ``z_angle`` are left out, while the metadata
+        ``rebuild()`` needs is retained. ``load()`` calls ``rebuild()``, which
+        recomputes both.
 
         The HDF5 file is intended as a package-internal checkpoint for
         reopening and rebuilding a TMM object with a compatible version of this
@@ -2957,9 +2970,7 @@ class TMM:
         if folder_check is False:
             os.mkdir(self.project_folder + os.sep + "Treatments")
 
-        self.reduce_size()
-
-        h5utils.save_class_to_hdf5(self, filename=self.filename,
+        h5utils.save_class_to_hdf5(self.reduced_copy(keep_angles=None), filename=self.filename,
                                    folder=self.project_folder + os.sep + "Treatments" + os.sep)
         print("HDF5 file saved at " + self.project_folder + os.sep + "Treatments" + os.sep + self.filename + ".h5")
 
