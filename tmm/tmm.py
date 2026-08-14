@@ -2883,13 +2883,12 @@ class TMM:
                 absorption_percentual.append(float(f"{result[i] * 100:0.0f}"))
             data = {"Bands [Hz]": freq_bands, "Absorption [-]": absorption, "Absorption [%]": absorption_percentual}
             df = pandas.DataFrame(data=data).set_index("Bands [Hz]").T
-            df = df.style.set_caption(f"1/{n_oct} Octave Absorption Data")
 
             try:
                 from IPython.display import display
                 display(df)
-            except:
-                print("IPython.display unavailable.")
+            except ImportError:
+                print(df.to_string())
 
         return bands, result
 
