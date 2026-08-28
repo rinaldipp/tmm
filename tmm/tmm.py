@@ -32,6 +32,10 @@ from tmm.database.path import path as database_path
 
 plot.set_style()
 
+# Cap on the rounding precision _grid_decimals derives for a frequency grid. Twelve decimals is far finer
+# than any real grid needs, so it only matters for a degenerate grid, which is then left effectively unrounded.
+MAX_GRID_DECIMALS = 12
+
 
 class TMM:
     """
@@ -54,12 +58,15 @@ class TMM:
         """
         Parameters
         ----------
-        fmin : int, optional
+        fmin : float, optional
             Minimum frequency of interest.
-        fmax : int, optional
+        fmax : float, optional
             Maximum frequency of interest.
-        df : int, optional
-            Frequency resolution.
+        df : float, optional
+            Sets how many points the grid has, as ``int((fmax - fmin) / df) + 1``. On a linear ``x_scale``
+            that is the frequency resolution in Hz. On a logarithmic one it only sets the point count: the
+            spacing is geometric, running from 0.02 Hz to 5.5 Hz across the default 20 Hz to 5 kHz band. It
+            does not apply while an explicit ``freq`` vector is set.
         incidence : string, optional
             String containing the desired type of incidence. ``'normal'`` is normal incidence, ``'angle'`` is a
             single oblique angle, and ``'diffuse'`` is a field-incidence approximation. Diffuse-incidence
@@ -75,7 +82,9 @@ class TMM:
         color : string, optional
             Matplotlib color specification used for cosmetic plotting and reporting only.
         x_scale : string, optional
-            X axis scale - 'lin' for linear or 'log' for logarithmic.
+            Spacing law of the grid built from ``fmin``/``fmax``/``df``: ``'lin'`` for a linear grid or
+            ``'log'`` for a logarithmic one. It does not affect plotting, and it does not apply while an
+            explicit ``freq`` vector is set.
         diffuse_method : string, optional
             Method used when ``incidence='diffuse'``. ``'field'`` computes a field-incidence impedance from an
             angular admittance average over the configured incidence angles. ``'paris'`` computes the
@@ -89,10 +98,12 @@ class TMM:
             Rear termination area in square meters. For ``backing='radiation'`` this is interpreted as the area
             of the circular radiating aperture. If omitted, ``srad`` defaults to ``s0``.
         freq : array_like, optional
-            Explicit frequency vector in Hz. When provided it takes precedence over ``fmin``/``fmax``/``df`` and
-            ``fmin``/``fmax`` are derived from its endpoints. The spacing may be non-uniform because the TMM
-            evaluates every frequency independently. When omitted, the uniform grid built from
+            Explicit frequency vector in Hz. When provided it owns the grid: ``fmin``/``fmax`` report its
+            endpoints while ``df`` and ``x_scale`` report ``None``. The spacing may be non-uniform because the
+            TMM evaluates every frequency independently. When omitted, the grid built from
             ``fmin``/``fmax``/``df`` is used.
+            The four derived-grid parameters are retained either way, so assigning ``freq = None`` later
+            restores the grid this constructor described.
         """
         if diffuse_method not in {"paris", "field"}:
             raise ValueError("diffuse_method must be 'paris' or 'field'.")
@@ -104,14 +115,9 @@ class TMM:
             srad = s0
 
         self._df = df
-        if freq is None:
-            self._fmin = fmin
-            self._fmax = fmax
-            self._freq = None
-        else:
-            self._freq = self._as_frequency_vector(freq)
-            self._fmin = float(self._freq[0])
-            self._fmax = float(self._freq[-1])
+        self._fmin = fmin
+        self._fmax = fmax
+        self._freq = None if freq is None else self._as_frequency_vector(freq)
         self._s0 = self._validate_positive_area(s0, "s0")
         self._srad = self._validate_positive_area(srad, "srad")
         self._air_prop = utils.AirProperties().standardized_c0_rho0()
@@ -270,6 +276,28 @@ class TMM:
         return freq
 
     @staticmethod
+    def _grid_decimals(grid):
+        """Return a rounding precision ten times finer than the tightest spacing in ``grid``.
+
+        Rounding keeps the stored frequencies tidy, but a fixed precision cannot serve every grid: one decimal
+        suits the default 1 Hz linear grid and collapses anything finer into duplicate values, which is a
+        silently shortened grid rather than an error. Deriving the precision from the grid instead bounds the
+        displacement of any point at 5% of its local spacing, which is what one decimal already gives at 1 Hz,
+        so grids at or above that spacing keep the values they have always had.
+
+        A grid whose points coincide has no spacing to derive a precision from, so it is left unrounded rather
+        than collapsed further.
+        """
+        if grid.size < 2:
+            return 1
+
+        spacing = float(np.diff(grid).min())
+        if not np.isfinite(spacing) or spacing <= 0:
+            return MAX_GRID_DECIMALS
+
+        return int(np.clip(np.ceil(-np.log10(spacing)) + 1, 1, MAX_GRID_DECIMALS))
+
+    @staticmethod
     def _validate_positive_area(value, name):
         """Return ``value`` as a positive scalar area."""
         try:
@@ -373,60 +401,94 @@ class TMM:
 
         return values.tolist()
 
+    def _refuse_derived_grid_change(self, name):
+        """Raise when a derived-grid parameter is assigned while an explicit vector owns the grid.
+
+        ``fmin``, ``fmax``, ``df`` and ``x_scale`` describe the grid built from them, which an explicit
+        ``freq`` vector replaces. Assigning to one of them there would edit a specification that is not in
+        force, changing what the treatment reports without changing what it computes.
+        """
+        if self._freq is not None:
+            raise AttributeError(
+                f"{name} does not control the frequency grid while an explicit freq vector is set, so assigning "
+                f"to it would change what the treatment reports without changing what it computes. Assign freq "
+                f"with the band you want, or set freq = None to go back to the derived grid."
+            )
+
     @property
     def fmin(self):
-        """Return minimum frequency of analysis."""
+        """Return minimum frequency of analysis, from the explicit vector when one is set."""
+        if self._freq is not None:
+            return float(self._freq[0])
+
         return self._fmin
 
     @fmin.setter
     def fmin(self, new_fmin):
         """Set new minimum frequency value."""
+        self._refuse_derived_grid_change("fmin")
         self._fmin = new_fmin
         self._mark_layers_stale("fmin was changed after model data existed.")
 
     @property
     def fmax(self):
-        """Return maximum frequency of analysis."""
+        """Return maximum frequency of analysis, from the explicit vector when one is set."""
+        if self._freq is not None:
+            return float(self._freq[-1])
+
         return self._fmax
 
     @fmax.setter
     def fmax(self, new_fmax):
         """Set new maximum frequency value."""
+        self._refuse_derived_grid_change("fmax")
         self._fmax = new_fmax
         self._mark_layers_stale("fmax was changed after model data existed.")
 
     @property
     def df(self):
-        """Return frequency resolution."""
+        """Return the parameter that sets the derived grid's density, or ``None`` while a vector owns the grid.
+
+        ``df`` fixes the point count as ``int((fmax - fmin) / df) + 1``, which is the frequency resolution in
+        Hz on a linear ``x_scale``, while on a logarithmic one it sets nothing beyond the number of points. A
+        vector has no such parameter behind it, and a non-uniform one has no single spacing to report, so there
+        is no honest number to give here. The value passed to the constructor is retained and comes back when
+        the vector is cleared.
+        """
+        if self._freq is not None:
+            return None
+
         return self._df
 
     @df.setter
     def df(self, new_df):
         """Set new frequency resolution value."""
+        self._refuse_derived_grid_change("df")
         self._df = new_df
         self._mark_layers_stale("df was changed after model data existed.")
 
     @property
     def freq(self):
         """Return frequency values."""
-        if self._freq is None:
-            if self._x_scale == "lin":
-                return np.linspace(self.fmin,
-                                   self.fmax,
-                                   int((self.fmax - self.fmin) / self.df) + 1).round(1)
-            elif self._x_scale == "log":
-                return np.logspace(np.log10(self.fmin),
-                                   np.log10(self.fmax),
-                                   int((self.fmax - self.fmin) / self.df) + 1).round(1)
-        else:
+        if self._freq is not None:
             return self._freq
+
+        points = int((self._fmax - self._fmin) / self._df) + 1
+        if self._x_scale == "lin":
+            grid = np.linspace(self._fmin, self._fmax, points)
+        else:
+            grid = np.logspace(np.log10(self._fmin), np.log10(self._fmax), points)
+
+        return grid.round(self._grid_decimals(grid))
 
     @freq.setter
     def freq(self, new_freq):
-        """Set an explicit frequency vector (Hz). Spacing may be non-uniform."""
-        self._freq = self._as_frequency_vector(new_freq)
-        self._fmin = float(self._freq[0])
-        self._fmax = float(self._freq[-1])
+        """Set an explicit frequency vector (Hz), or ``None`` to return to the fmin/fmax/df grid.
+
+        Spacing may be non-uniform. The derived-grid parameters are left untouched, so clearing the vector
+        restores the grid they describe rather than some mixture of the two.
+        """
+        self._freq = None if new_freq is None else self._as_frequency_vector(new_freq)
         self._mark_layers_stale("freq was changed after model data existed.")
 
     @property
@@ -555,12 +617,22 @@ class TMM:
 
     @property
     def x_scale(self):
-        """Return frequency-grid spacing: ``'lin'`` for linear or ``'log'`` for logarithmic."""
+        """Return frequency-grid spacing, or ``None`` while an explicit vector owns the grid.
+
+        ``'lin'`` and ``'log'`` describe how the grid built from ``fmin``/``fmax``/``df`` is spaced. A vector
+        carries its own spacing, which need not be uniform in frequency or in its logarithm, so there is no law
+        to report here. The value passed to the constructor is retained and comes back when the vector is
+        cleared.
+        """
+        if self._freq is not None:
+            return None
+
         return self._x_scale
 
     @x_scale.setter
     def x_scale(self, new_x_scale):
         """Set frequency-grid spacing to ``'lin'`` or ``'log'``."""
+        self._refuse_derived_grid_change("x_scale")
         self._x_scale = self._validate_x_scale(new_x_scale)
         self._mark_layers_stale("x_scale was changed after model data existed.")
 
@@ -2614,11 +2686,29 @@ class TMM:
             self.compute(rigid_backing=False, show_layers=False)
         self._clear_stale_state()
 
+    def _describe_frequency_vector(self):
+        """Return source text that rebuilds the explicit frequency vector.
+
+        Inlining a few thousand floats is unreadable, so a vector that came from ``linspace`` or ``geomspace``
+        is emitted as the call that produced it. Anything else falls back to the literal values, which is long
+        but exact. A reproduction log that cannot reproduce the grid is worse than a long line.
+        """
+        freq = self._freq
+        first, last, points = float(freq[0]), float(freq[-1]), freq.size
+
+        if points > 2:
+            if np.allclose(freq, np.linspace(first, last, points)):
+                return f"np.linspace({first!r}, {last!r}, {points})"
+            if first > 0 and np.allclose(freq, np.geomspace(first, last, points)):
+                return f"np.geomspace({first!r}, {last!r}, {points})"
+
+        return f"np.array({freq.tolist()!r})"
+
     def log_rebuild(self):
         """Logs a list of commands calls needed to recreate the TMM object."""
         matrix = self.matrix.copy()
         optional_constructor_args = ""
-        if self.x_scale != "lin":
+        if self.x_scale != "lin" and self._freq is None:
             optional_constructor_args += f", x_scale={self.x_scale!r}"
         if self.display_name is not None:
             optional_constructor_args += f", display_name={self.display_name!r}"
@@ -2628,11 +2718,17 @@ class TMM:
             optional_constructor_args += f", s0={self.s0!r}"
         if self.srad != self.s0:
             optional_constructor_args += f", srad={self.srad!r}"
+        if self._freq is None:
+            preamble = []
+            grid_args = f"fmin={self.fmin}, fmax={self.fmax}, df={self.df:0.2f}, "
+        else:
+            preamble = ["import numpy as np"]
+            grid_args = f"freq={self._describe_frequency_vector()}, "
+
         logged_calls = [f"# {self.filename.capitalize()}",
+                        *preamble,
                         f"{self.filename} = TMM("
-                        f"fmin={self.fmin}, "
-                        f"fmax={self.fmax}, "
-                        f"df={self.df:0.2f}, "
+                        f"{grid_args}"
                         f"project_folder=fm.folder_path, "
                         f"incidence='{self.incidence}', "
                         f"incidence_angle={self._incidence_angle}, "
