@@ -25,6 +25,7 @@ from scipy.interpolate import CubicSpline
 from scipy.signal import butter, freqz, savgol_filter
 from scipy.special import jv
 
+from tmm import _causality as causality
 from tmm import _h5utils as h5utils
 from tmm import _plot as plot
 from tmm import _utils as utils
@@ -2940,6 +2941,340 @@ class TMM:
                     print(f"\t{key}: {value}")
         print(f"\nTotal treatment depth [mm]: {total_depth:0.2f} | " +
               f"Total treatment depth {conversion[1]}: {total_depth * conversion[0]:0.2f}")
+
+    def _normal_incidence_alpha(self):
+        """Return the normal-incidence absorption coefficient, whatever the treatment's incidence mode is."""
+        if self.incidence == "normal":
+            _, alpha = self.reflection_and_absorption_coefficient(self.z)
+            return np.asarray(alpha, dtype=float).reshape(-1)
+
+        # 'self.alpha' is Paris-averaged under diffuse incidence and 'self.z' is the field impedance, so neither
+        # can be used here. The 0 deg column of 'z_angle' is the only normal-incidence quantity available.
+        angles = self._stored_z_angle_angles()
+        try:
+            angle_idx = int(self._match_stored_angles([0.0], angles)[0])
+        except ValueError as error:
+            raise ValueError(
+                f"The causality bound is derived at normal incidence, and this treatment has no 0 deg column to "
+                f"read it from: {error} Recompute with incidence='normal', or with an angular range that starts "
+                f"at 0 deg."
+            ) from None
+
+        return np.asarray(self.alpha_angle(angle_idx), dtype=float).reshape(-1)
+
+    def _rigid_backing_entry(self):
+        """Return the stored backing record, raising when it is missing or is not a rigid wall."""
+        entry = next(
+            (value for value in self.matrix.values() if isinstance(value, dict) and value.get("type") == "backing"),
+            None,
+        )
+        if entry is None:
+            raise RuntimeError("The causality bound needs a computed treatment. Call compute() first.")
+
+        backing = entry.get("backing", "rigid" if entry.get("rigid_backing", True) else "air")
+        if backing != "rigid":
+            raise ValueError(
+                f"The causality bound is derived for a rigid-backed layer with no transmission, but this treatment "
+                f"was computed with backing={backing!r}. Recompute with backing='rigid'."
+            )
+
+        return entry
+
+    def _static_bulk_modulus_ratio(self, bulk_modulus_ratio, thermal):
+        """Return the static ``Beff / B0`` to use, its provenance, and the per-layer breakdown."""
+        overridden = bulk_modulus_ratio is not None
+        try:
+            ratio, layers = causality.effective_bulk_modulus_ratio(
+                self.matrix,
+                thermal=thermal,
+                gamma=self.air_prop["specific_heat_ratio"],
+            )
+        except ValueError:
+            # An override is exactly how a stack that cannot be derived from layer metadata is meant to be
+            # handled, so the per-layer breakdown is best effort in that case rather than fatal.
+            if not overridden:
+                raise
+            ratio, layers = None, []
+
+        if bulk_modulus_ratio is not None:
+            if bulk_modulus_ratio <= 0:
+                raise ValueError("bulk_modulus_ratio must be greater than zero.")
+            return float(bulk_modulus_ratio), "user", layers
+
+        return ratio, "auto", layers
+
+    def causality_check(self, bulk_modulus_ratio=None, thermal="isothermal", tail="model"):
+        """
+        Compare the treatment depth against the minimum thickness allowed by the causality principle.
+
+        Evaluates the Yang-Chen-Fu-Sheng bound ``d_min <= d``, where
+        ``d_min = (c0 / (4 * pi**2)) * (Beff / B0) * integral of -ln[1 - A(f)] / f**2 df`` over the
+        normal-incidence, rigid-backed absorption spectrum. A treatment with ``ratio = d_min / depth`` close to
+        unity is optimal in the sense of the source paper: it uses no more thickness than causality demands for
+        the spectrum it delivers.
+
+        The integral runs from zero to infinite frequency while the treatment is only computed over a finite
+        band, so the out-of-band tails are estimated and reported separately. Read ``tail_fraction`` before
+        trusting the number: a result whose tails carry a large share warns, whichever side of the bound it
+        lands on and under either ``tail`` mode. The Notes give the recipe for a wider band.
+
+        Parameters
+        ----------
+        bulk_modulus_ratio : float, optional
+            Static ``Beff / B0`` overriding the value derived from the layer metadata. Required for stacks
+            containing a membrane layer, a constant impedance or a material model, whose static compressibility
+            is not described by Wood's law. A porosity is not accepted in its place because it cannot express a
+            ratio below unity, which the isothermal limit and a membrane's compliance both need.
+        thermal : string, optional
+            Static compression assumed for the derived ratio. ``'isothermal'`` applies the specific heat ratio to
+            porous layers, which is their true zero-frequency limit. ``'adiabatic'`` reproduces the assumption
+            made in the source paper.
+        tail : string, optional
+            ``'model'`` adds the out-of-band tails. ``'none'`` returns the in-band integral only, which
+            underestimates ``d_min``.
+
+        Returns
+        -------
+        Dictionary with ``d_min``, ``d_min_in_band`` and ``depth`` in millimetres, the dimensionless ``ratio``
+        between the first and the last, the static bulk modulus ratio and its per-layer breakdown, the three
+        integral pieces, and any warnings raised.
+
+        Notes
+        -----
+        A ``ratio`` above unity is reported rather than raised. No passive rigid-backed structure can exceed
+        the bound, so it means the static bulk modulus is too large, the stack holds compliance that Wood's law
+        discards, or a layer model is not passive. The ``diagnosis`` entry names which, and the empirical
+        Delany-Bazley family, non-causal at low ``f / sigma``, is the usual cause.
+
+        A large ``tail_fraction`` means the band was too narrow to pin ``d_min`` down. The fix is to recompute
+        over a wider band, on a copy so the treatment keeps its own::
+
+            import copy
+            import numpy as np
+
+            wide = copy.deepcopy(treatment)
+            wide.freq = np.geomspace(7, 20000, 1500)
+            wide.rebuild()
+            wide.compute(backing="rigid", show_layers=False)
+            result = wide.causality_check()
+
+        Widening collapses the extrapolated share while barely moving ``ratio``. Push ``fmin`` down only as far
+        as the layer models stay passive: the empirical porous models return slightly negative absorption below
+        a floor set by the model and the flow resistivity. Confirm with ``result['diagnosis']['passivity']``
+        rather than with ``check_passivity()``, which also screens the oblique columns and can fail on a widened
+        diffuse copy even when the causality result is sound. Keep the upper edge at or below 20 kHz, and read
+        nothing but the causality result off the widened copy.
+
+        A ``ratio`` well below unity is design feedback rather than a fault: the same depth could carry more
+        absorption, more bandwidth, or a lower band edge. A perforated facing over an undamped cavity is the
+        usual example, and porous material behind the same facing lifts the ratio close to unity at unchanged
+        depth.
+
+        References
+        ----------
+        [1] M. Yang, S. Chen, C. Fu and P. Sheng, "Optimal sound-absorbing structures", Materials Horizons,
+            vol. 4, pp. 673-680, 2017.
+        """
+        self._raise_if_stale_results("causality_check()")
+        self._rigid_backing_entry()
+
+        ratio_value, source, layers = self._static_bulk_modulus_ratio(bulk_modulus_ratio, thermal)
+        alpha = self._normal_incidence_alpha()
+
+        result = causality.causal_minimum_thickness(self.freq, alpha, self.c0, ratio_value, tail=tail)
+
+        depth = self.depth
+        diagnosis, message = causality.diagnose(
+            result,
+            depth,
+            ratio_value,
+            self.freq,
+            alpha,
+            available_ratios=self._available_bulk_modulus_ratios(),
+        )
+        if message is not None:
+            result["warnings"].append(message)
+            warnings.warn(message, RuntimeWarning, stacklevel=2)
+
+        result.update({"depth": depth,
+                       "ratio": diagnosis["ratio"],
+                       "bulk_modulus_ratio": ratio_value,
+                       "bulk_modulus_ratio_source": source,
+                       "thermal": thermal,
+                       "layers": layers,
+                       "diagnosis": diagnosis,
+                       })
+
+        return result
+
+    def plot_causality(self, show_fig=True, result=None, n_oct=1, **kwargs):
+        """
+        Plot how the causality minimum thickness accumulates across this treatment's spectrum.
+
+        Three stacked panels: the normal-incidence absorption the causality constraint was evaluated on, the
+        minimum thickness accumulated up to each frequency against the treatment depth, and the same curve as
+        fractional-octave bands. The middle panel draws the constraint itself, since the accumulated curve must
+        finish below the depth line.
+
+        Most of ``d_min`` is usually accumulated where the absorption curve looks worst: the ``1 / f**2``
+        weight of the sum rule makes a mediocre low-frequency roll-off contribute far more minimum thickness
+        than a flat high-frequency plateau.
+
+        Parameters
+        ----------
+        show_fig : bool, optional
+            If True, display the Matplotlib figure after generating it.
+        result : dict, optional
+            A ``causality_check()`` result. Passing a result keeps the figure consistent with numbers already
+            inspected. If omitted, one is computed with default options.
+        n_oct : int, optional
+            Fractional octave resolution of the band panel, following the ``filter_alpha()`` convention.
+        **kwargs
+            Keyword arguments passed to ``tmm._plot.causality_data``.
+
+        See Also
+        --------
+        tmm._plot.causality_data
+        TMM.causality_check
+        """
+        self._raise_if_stale_results("plot_causality()")
+        if "filename" not in kwargs:
+            kwargs["filename"] = self.filename
+        else:
+            kwargs["filename"] = self._validate_filename(kwargs["filename"]) or self.filename
+        if "project_folder" not in kwargs:
+            kwargs["project_folder"] = self.project_folder
+        else:
+            kwargs["project_folder"] = self._validate_project_folder(kwargs["project_folder"]) or os.getcwd()
+        _, _, _ = plot.causality_data(self, result=result, n_oct=n_oct, **kwargs)
+        if show_fig:
+            plt.show()
+
+    def _available_bulk_modulus_ratios(self):
+        """Return the static ``Beff / B0`` this stack supports under each thermal assumption."""
+        available = {}
+        for mode in causality.VALID_THERMAL:
+            try:
+                available[mode], _ = causality.effective_bulk_modulus_ratio(
+                    self.matrix,
+                    thermal=mode,
+                    gamma=self.air_prop["specific_heat_ratio"],
+                )
+            except ValueError:
+                continue
+
+        return available
+
+    def check_passivity(self, tolerance=0.0, angles=True):
+        """
+        Report whether the computed absorption spectrum is physically realizable.
+
+        A passive treatment absorbs between none and all of the incident energy, so ``0 <= alpha <= 1``. A
+        spectrum leaving that range describes a treatment that creates energy or reflects more than it receives,
+        which means a layer model has been evaluated outside its valid range. The empirical Delany-Bazley
+        family is the usual cause, returning negative absorption at low ``f / sigma`` where its curve fits no
+        longer hold.
+
+        Run it on its own as well, not only through ``causality_check()``: the causality bound assumes
+        passivity, so a non-passive spectrum falls outside its premises entirely.
+
+        Parameters
+        ----------
+        tolerance : float, optional
+            Slack allowed outside ``[0, 1]`` before a sample counts as non-passive, for absorbing float noise.
+        angles : bool, optional
+            Also screen every stored angle-dependent absorption column, not just the treatment's own ``alpha``.
+
+        Returns
+        -------
+        Dictionary with ``passive``, the observed ``alpha_range``, the contiguous ``bands [Hz]`` that offend, the
+        number of offending samples, and the spectra that were screened.
+        """
+        self._raise_if_stale_results("check_passivity()")
+
+        spectra = {"alpha": np.asarray(self.alpha, dtype=float)}
+        if angles and getattr(self, "_z_angle", None) is not None:
+            for index, angle in enumerate(self._stored_z_angle_angles()):
+                spectra[f"{angle:g} deg"] = np.asarray(self.alpha_angle(index), dtype=float)
+
+        reports = {name: causality.passivity_report(self.freq, values, tolerance=tolerance)
+                   for name, values in spectra.items()}
+        offending = {name: report for name, report in reports.items() if not report["passive"]}
+
+        return {"passive": not offending,
+                "alpha_range": (min(report["alpha_range"][0] for report in reports.values()),
+                                max(report["alpha_range"][1] for report in reports.values())),
+                "bands [Hz]": sorted({band for report in offending.values() for band in report["bands [Hz]"]}),
+                "n_offending": sum(report["n_offending"] for report in reports.values()),
+                "tolerance": float(tolerance),
+                "spectra": reports,
+                }
+
+    def causality_limit(self, solve_for="frequency", alpha_target=0.9, f_low=None, f_high=None, depth=None,
+                        bulk_modulus_ratio=None, thermal="isothermal"):
+        """
+        Solve the causality bound for an idealised flat absorption target.
+
+        The bound ties three quantities together: sample thickness, frequency bandwidth and the absorption
+        magnitude within the band. Specifying two of them fixes the third. For a target holding ``alpha_target``
+        over ``[f_low, f_high]``, with ``L0 = abs(ln(1 - alpha_target))``, the closed forms are
+        ``d = (c0 * L0 / (4 * pi**2)) * (Beff / B0) * (1 / f_low - 1 / f_high)`` and its two rearrangements.
+
+        Parameters
+        ----------
+        solve_for : string, optional
+            ``'frequency'`` returns the lowest attainable band edge, ``'depth'`` the required thickness, and
+            ``'absorption'`` the highest flat absorption coefficient the band can hold.
+        alpha_target : float, optional
+            Flat absorption coefficient held across the band. Ignored when solving for it.
+        f_low : float, optional
+            Lower band edge in Hz. Ignored when solving for it.
+        f_high : float or None, optional
+            Upper band edge in Hz. ``None`` means the target extends to infinite frequency.
+        depth : float, optional
+            Treatment thickness in millimetres. Defaults to this treatment's depth. Ignored when solving for it.
+        bulk_modulus_ratio : float, optional
+            Static ``Beff / B0`` overriding the value derived from the layer metadata. See
+            ``causality_check()`` for why a porosity is not accepted in its place.
+        thermal : string, optional
+            Static compression assumed for the derived ratio, ``'isothermal'`` or ``'adiabatic'``.
+
+        Returns
+        -------
+        Dictionary with the solved quantity and every input used, so a printed result states its own assumptions.
+
+        Notes
+        -----
+        This describes an idealised step spectrum, not the absorption of this stack. It reads as "no causal,
+        passive, rigid-backed structure of this thickness and static bulk modulus can hold a flat
+        ``alpha_target`` below ``f_low``", never as "this treatment works down to ``f_low``".
+
+        Omitting ``f_high`` asks for a target that holds ``alpha_target`` at every frequency above ``f_low``,
+        which demands more thickness than any finite band. Real absorbers, and resonators in particular, trade
+        bandwidth for a lower band edge, and the bound fixes the trade exactly: for a target whose upper edge
+        is ``r`` times its lower one, the attainable ``f_low`` scales by ``1 - 1 / r``. One octave halves it
+        against the infinite-bandwidth answer and a third octave takes it to a fifth. Quoting the
+        ``f_high=None`` figure for a narrowband design therefore understates what is reachable by a factor of
+        two or more, so pass the bandwidth actually wanted.
+
+        Read the other way, a narrowband target needs little thickness and a broadband one does not. Holding
+        ``alpha_target`` across a narrow notch in the low bass takes a fraction of the thickness that holding
+        it from the notch's lower edge upward would. Causality does not forbid deep bass in a shallow cavity,
+        it forbids deep bass together with bandwidth.
+        """
+        ratio_value, _, _ = self._static_bulk_modulus_ratio(bulk_modulus_ratio, thermal)
+        if depth is None and solve_for != "depth":
+            depth = self.depth
+
+        return causality.causality_limit(
+            solve_for,
+            self.c0,
+            ratio_value,
+            alpha_target=None if solve_for == "absorption" else alpha_target,
+            f_low=None if solve_for == "frequency" else f_low,
+            f_high=f_high,
+            depth=None if solve_for == "depth" else depth,
+        )
 
     def filter_alpha(self, n_oct=1, view=True, show_table=False, **kwargs):
         """

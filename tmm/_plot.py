@@ -477,3 +477,133 @@ def oct_filter(narrowbad_freq, narrowband_value, freq_bands, filtered_value, n_o
 
     return fig, [ax1, ax2]
 
+
+def causality_data(tmm, result=None, n_oct=1, fig=None, ax=None, gs=None, figsize=(10, 10), base_fontsize=12,
+                   xtype="log", legend="inside", save_fig=False, project_folder=None, filename=None, **kwargs):
+    """
+    Plot how the causality minimum thickness accumulates across the spectrum.
+
+    Three stacked panels:
+
+    1. The normal-incidence absorption coefficient the causality constraint was evaluated on.
+    2. The minimum thickness accumulated up to each frequency, against the treatment depth and the total
+       ``d_min``. The accumulated curve must finish below the depth line, which is the constraint itself.
+    3. The same curve as fractional-octave bands, which shows each band's contribution directly.
+
+    Most of ``d_min`` is usually accumulated where the absorption curve looks worst: the ``1 / f**2`` weight of
+    the sum rule makes a mediocre low-frequency roll-off contribute far more minimum thickness than a flat
+    high-frequency plateau.
+
+    Parameters
+    ----------
+    tmm : class
+        A computed rigid-backed TMM object.
+    result : dict, optional
+        A ``TMM.causality_check()`` result. Passing a result keeps the figure consistent with numbers already
+        inspected. If omitted, one is computed with default options.
+    n_oct : int, optional
+        Fractional octave resolution of the band panel, following the ``TMM.filter_alpha`` convention.
+    fig : class
+        Matplotlib Figure object.
+    ax : class
+        List of Matplotlib Axes objects.
+    gs : class
+        Matplotlib GridSpec object.
+    figsize : tuple, optional
+        Figure size.
+    base_fontsize : int, optional
+        Base font size.
+    xtype : string, optional
+        Frequency axis type: ``"linear"`` or ``"log"``.
+    legend : string, optional
+        Legend placement option: ``"inside"`` or ``"outside"``.
+    save_fig : bool, optional
+        Option to save figure as static image.
+    project_folder : str
+        String containing the destination folder in which the image will be saved. If not defined the current
+        active folder will be used.
+    filename : str
+        String that will be used as the full or partial file name.
+    kwargs : keyword arguments, optional
+        See ``tmm._plot.save_matplotlib_fig``.
+
+    Returns
+    -------
+    Matplotlib Figure, list of Axes and GridSpec objects.
+    """
+    from tmm import _causality as causality
+
+    set_style()
+    if result is None:
+        result = tmm.causality_check()
+
+    freq = np.asarray(tmm.freq, dtype=float)
+    alpha = tmm._normal_incidence_alpha()
+    cumulative = causality.cumulative_thickness(freq, alpha, tmm.c0, result["bulk_modulus_ratio"])
+    edges, per_band = causality.band_contributions(freq, cumulative, n_oct=n_oct)
+
+    if fig is None:
+        fig = plt.figure(figsize=figsize)
+    if gs is None:
+        gs = gridspec.GridSpec(3, 1)
+    if ax is None:
+        ax = [fig.add_subplot(gs[i]) for i in range(3)]
+
+    primary = _primary_plot_color(tmm, True)
+    secondary = _secondary_plot_color(True)
+    satisfied = result["ratio"] <= 1
+
+    ax[0].plot(freq, alpha, linewidth=2, color=primary, label="Normal Incidence Absorption")
+    ax[0].set_title(_title_with_display_name(r"Absorption Coefficient ($\alpha$)", [tmm]),
+                    fontsize=base_fontsize, loc="left")
+    ax[0].set_ylabel(r"$\alpha$ [-]", fontsize=base_fontsize - 1)
+    ax[0].set_ylim(0, 1.05)
+
+    ax[1].plot(freq, cumulative, linewidth=2, color=primary, label=r"Cumulative $d_{min}$ up to Frequency")
+    ax[1].axhline(result["depth"], color="k", linestyle="--",
+                  label=f"Treatment Depth {result['depth']:0.1f} mm")
+    ax[1].axhline(result["d_min"], color=secondary, linestyle=":",
+                  label=f"$d_{{min}}$ {result['d_min']:0.1f} mm ({result['ratio']:0.0%} of Depth)")
+    ax[1].set_title(_title_with_display_name(r"Cumulative Minimum Thickness ($d_{min}$)", [tmm]),
+                    fontsize=base_fontsize, loc="left")
+    ax[1].set_ylabel(r"Cumulative $d_{min}$ [mm]", fontsize=base_fontsize - 1)
+    ax[1].set_ylim(0, max(result["depth"], result["d_min"]) * 1.15)
+
+    ax[2].stairs(per_band, edges, color=primary, fill=True, alpha=0.75,
+                 label=rf"$d_{{min}}$ per 1/{n_oct} Octave")
+    ax[2].set_title(_title_with_display_name(r"Minimum Thickness ($d_{min}$) per Band", [tmm]),
+                    fontsize=base_fontsize, loc="left")
+    ax[2].set_ylabel(r"$d_{min}$ per Band [mm]", fontsize=base_fontsize - 1)
+
+    verdict = ("Within the causality constraint" if satisfied
+               else "ABOVE the causality constraint, see result['diagnosis']")
+    fig.text(0.5, 0.005, verdict, ha="center", fontsize=base_fontsize - 2, style="italic")
+
+    for axis in ax:
+        axis.set_xlabel("Frequency [Hz]", fontsize=base_fontsize - 1)
+        axis.set_xscale(xtype)
+        axis.set_xlim(freq[0], freq[-1])
+        axis.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
+        axis.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())
+        axis.tick_params(which="minor", length=5, rotation=-90, axis="x")
+        axis.tick_params(which="major", length=5, rotation=-90, axis="x")
+        axis.tick_params(axis="both", which="both", labelsize=base_fontsize - 2)
+        axis.minorticks_on()
+        axis.grid("minor")
+        _place_legend(axis, legend, "vertical", base_fontsize)
+
+    if legend == "outside":
+        gs.tight_layout(fig, pad=3, w_pad=1, h_pad=1, rect=[0, 0.02, 0.80, 1])
+    else:
+        gs.tight_layout(fig, pad=3, w_pad=1, h_pad=1, rect=[0, 0.02, 1, 1])
+
+    if save_fig:
+        filename = filename if filename is not None else "causality_data"
+        project_folder = project_folder if project_folder is not None else os.getcwd()
+        if "subfolder" not in kwargs:
+            kwargs["subfolder"] = "Treatments"
+        kwargs.setdefault("transparent", False)
+        kwargs.setdefault("facecolor", "white")
+        save_matplotlib_fig(fig, filename, project_folder, **kwargs)
+
+    return fig, ax, gs
