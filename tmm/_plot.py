@@ -124,6 +124,20 @@ def _add_paris_impedance_note(axis, base_fontsize):
     axis._paris_absorption_note = True
 
 
+def _add_no_scattering_note(axis, base_fontsize):
+    """Annotate the scattering panel when no plotted treatment carries scattering data."""
+    axis.text(
+        0.5,
+        0.5,
+        "No scattering data available.",
+        transform=axis.transAxes,
+        ha="center",
+        va="center",
+        fontsize=base_fontsize - 1,
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "edgecolor": "0.65", "alpha": 0.85},
+    )
+
+
 def _place_legend(axis, legend, orientation, base_fontsize):
     """Place a legend when the axis has labeled artists."""
     handles, labels = axis.get_legend_handles_labels()
@@ -213,9 +227,9 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
     figsize : tuple, optional
         Figure size.
     plots : list, optional
-        List of strings with the desired plots: ``"z"`` for impedance,
-        ``"y"`` for admittance, ``"alpha"`` for absorption coefficient, and
-        ``"scat"`` for scattering coefficient.
+        List of strings with the desired plots: ``"z"`` for impedance, ``"y"`` for admittance, ``"alpha"`` for
+        absorption coefficient, and ``"scat"`` for scattering coefficient. The scattering panel draws only
+        treatments whose ``scat`` is not ``None`` and carries a note when none of them has data.
     max_mode : bool, optional
         Option to identify first absorption peak if any.
     show_incidence : bool, optional
@@ -263,6 +277,7 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
     single_treatment = len(tmms) == 1
     common_fmin = min(float(np.min(tmm.freq)) for tmm in tmms)
     common_fmax = max(float(np.max(tmm.freq)) for tmm in tmms)
+    scat_axis = None
 
     for tmm in tmms:
         label_name = _label_prefix(tmm, labels, single_treatment)
@@ -347,11 +362,13 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
             ax[i].set_title(_title_with_display_name(r"Scattering Coefficient ($s$)", tmms),
                             fontsize=base_fontsize)
             ax[i].set_ylabel(r"$s$ [-]", fontsize=base_fontsize - 1)
-            curve_label = label_name.rstrip(" | ") if label_name else "Scattering Coefficient"
-            ax[i].plot(tmm.freq, tmm.scat, linewidth=2, label=curve_label, c=primary_color)
+            if tmm.scat is not None:
+                curve_label = label_name.rstrip(" | ") if label_name else "Scattering Coefficient"
+                ax[i].plot(tmm.freq, tmm.scat, linewidth=2, label=curve_label, c=primary_color)
             ax[i].set_ylim([-0.1, 1.1])
             ax[i].yaxis.set_ticks(np.arange(0, 1.01, 0.1))
             ax[i].yaxis.set_major_formatter(ticker.FormatStrFormatter('%0.1f'))
+            scat_axis = ax[i]
             i += 1
 
         for axis in ax:
@@ -370,6 +387,9 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
 
             if labels == "full" or labels is True:
                 _place_legend(axis, legend, orientation, base_fontsize)
+
+    if scat_axis is not None and not scat_axis.lines:
+        _add_no_scattering_note(scat_axis, base_fontsize)
 
     if legend == "outside":
         if orientation == "horizontal":

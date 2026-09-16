@@ -659,15 +659,18 @@ class TMM:
 
     @property
     def scat(self):
-        """Return scattering coefficient (given by material_model only)."""
-        if self._scat is not None:
-            return self._scat
-        else:
-            return np.zeros_like(self.freq)
+        """
+        Return the scattering coefficient, or ``None`` when none has been set.
+
+        ``material_model()`` sets it from the GRAS third-octave scattering data of the bundled CSV file,
+        spline-interpolated onto ``self.freq``. It can also be assigned directly, for example from a value
+        measured or computed elsewhere.
+        """
+        return self._scat
 
     @scat.setter
     def scat(self, new_scat):
-        """Set scattering coefficient."""
+        """Set the scattering coefficient on ``self.freq``."""
         self._scat = new_scat
 
     @property
@@ -1855,7 +1858,8 @@ class TMM:
         ``self.freq``. TMM uses natural cubic spline interpolation for these fits rather than the MATLAB helpers'
         endpoint-slope spline, which avoids unstable endpoint artifacts in sparse data. Where the bundled CSV
         files carry scattering data, ``self.scat`` is interpolated the same way; that output is a package
-        addition, since the MATLAB helpers return admittance only.
+        addition, since the MATLAB helpers return admittance only. ``door`` has no such data, so ``self.scat``
+        stays ``None``.
 
         The ``door`` and ``window`` branches keep the hybrid construction of the original helpers: a resistive
         absorption-data fit combined with a reactive mass-spring-damper panel admittance through a
