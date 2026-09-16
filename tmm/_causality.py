@@ -495,9 +495,9 @@ def causality_limit(solve_for, c0, bulk_modulus_ratio, alpha_target=None, f_low=
     Solve the causality bound for an idealised flat absorption target.
 
     For a target that holds ``A0`` over ``[f_low, f_high]`` and vanishes elsewhere, the bound integrates in closed
-    form to ``d = (c0 * L0 / (4 * pi**2)) * (Beff / B0) * (1 / f_low - 1 / f_high)`` with ``L0 = abs(ln(1 - A0))``. Any one
-    of the three quantities follows from the other two, which is the thickness, bandwidth and absorption-magnitude
-    tradeoff described in the source paper.
+    form to ``d = (c0 * L0 / (4 * pi**2)) * (Beff / B0) * (1 / f_low - 1 / f_high)`` with
+    ``L0 = abs(ln(1 - A0))``. Any one of the three quantities follows from the other two, which is the thickness,
+    bandwidth and absorption-magnitude tradeoff described in the source paper.
 
     This describes an idealised step spectrum, not the absorption of an actual stack. The result reads as "no
     causal, passive, rigid-backed structure of this thickness and porosity can hold a flat ``A0`` below
@@ -670,9 +670,8 @@ def diagnose(result, depth, bulk_modulus_ratio, freq, alpha, available_ratios=No
     """
     Explain a causality result, naming the cause of a violated bound rather than listing candidates.
 
-    No passive rigid-backed structure can exceed the bound, so ``d_min > d`` always means an assumption broke. The
-    evidence needed to tell the candidates apart is already available, so this returns the one cause it finds
-    rather than the whole list:
+    No passive rigid-backed structure can exceed the bound, so ``d_min > d`` always means an assumption broke.
+    The three tests, in the order they settle it:
 
     - A non-passive spectrum settles it by itself: the bound assumes passivity, so it does not apply at all.
     - ``d_min_in_band > depth`` rules out the out-of-band tails, because the computed part alone already exceeds

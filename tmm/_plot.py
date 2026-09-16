@@ -1,4 +1,4 @@
-""""
+"""
 Data visualization module.
 
 This module receives organized raw data and plot it through its functions.
@@ -189,34 +189,27 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
     """
     Plot acoustic response data with Matplotlib.
 
-    The function can plot one or more ``TMM`` objects on shared axes. For
-    single-treatment plots, ``display_name`` is appended to the subplot title
-    when available and ``color`` is used as the primary treatment curve color.
-    If no color is set, the first color in the active Matplotlib color cycle is
-    used. Secondary reference curves in single-treatment plots, such as the
-    normal-incidence curve shown beside a diffuse-incidence result, use the
-    second color in the active color cycle.
+    One or more ``TMM`` objects are drawn on shared axes. A single-treatment title carries ``display_name``
+    when it is set. Multi-treatment legends prefix every entry with ``display_name``, falling back to
+    ``filename``, when ``labels="full"``. A treatment's ``color`` sets its primary curve; otherwise the first
+    color of the active Matplotlib cycle is used, and the second color draws the normal-incidence reference
+    curve shown beside a diffuse-incidence result.
 
-    For multi-treatment plots, ``display_name`` falls back to ``filename`` and
-    is used as the legend prefix when ``labels="full"``. Each treatment's
-    ``color`` still controls its own curves when supplied.
-
-    Diffuse Paris averaging is an absorption-only calculation. When the object
-    was computed with ``incidence="diffuse"`` and ``diffuse_method="paris"``,
-    impedance and admittance subplots are left empty and annotated rather than
-    showing field-impedance values that do not correspond to the selected
-    diffuse absorption method.
+    Diffuse Paris averaging is an absorption-only calculation. When the object was computed with
+    ``incidence="diffuse"`` and ``diffuse_method="paris"``, the impedance and admittance subplots are left
+    empty and annotated, because field-impedance values would not correspond to the selected diffuse
+    absorption method.
 
     Parameters
     ----------
     tmms : list
-        List of TMM class objects.
-    fig : class
-        Matplotlib Figure object.
-    ax : class
-        Matplotlib Axes object.
-    gs : class
-        Matplotlib GridSpec object.
+        ``TMM`` objects to plot.
+    fig : Figure, optional
+        Matplotlib Figure to draw on.
+    ax : Axes or list of Axes, optional
+        Matplotlib Axes to draw on.
+    gs : GridSpec, optional
+        Matplotlib GridSpec for the subplots.
     figsize : tuple, optional
         Figure size.
     plots : list, optional
@@ -396,14 +389,14 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
         save_matplotlib_fig(fig, filename, project_folder, **kwargs)
 
     return fig, ax, gs
-def oct_filter(narrowbad_freq, narrowband_value, freq_bands, filtered_value, n_oct, y_label, x_scale="log",
+def oct_filter(narrowband_freq, narrowband_value, freq_bands, filtered_value, n_oct, y_label, x_scale="log",
                figsize=(16, 9), save_fig=False, filename=None, project_folder=None, base_fontsize=12, **kwargs):
     """
     Plot the narrowband data and the octave filtered data together.
 
     Parameters
     ----------
-    narrowbad_freq : array
+    narrowband_freq : array
         1D array of narrowband frequency values.
     narrowband_value : array
         1D array of narrowband amplitude values.
@@ -429,15 +422,15 @@ def oct_filter(narrowbad_freq, narrowband_value, freq_bands, filtered_value, n_o
     base_fontsize : int, optional
         Base font size.
     kwargs : keyword arguments, optional
-        See tmm._plot.save_matplotlib_fig.
+        See ``tmm._plot.save_matplotlib_fig``.
 
     Returns
     -------
-    Matplolib Figure and list of Axes objects.
+    Matplotlib Figure and list of Axes objects.
     """
     fig, ax1 = plt.subplots(figsize=figsize)
 
-    ax1.semilogx(narrowbad_freq, narrowband_value, label="Narrowband")
+    ax1.semilogx(narrowband_freq, narrowband_value, label="Narrowband")
     ax1.semilogx(freq_bands, filtered_value, "o-", label=f"1/{n_oct} octave band")
     ax1.set_ylabel(y_label, fontsize=base_fontsize - 1)
     ax1.set_xlabel("Narrowband Frequency [Hz]", fontsize=base_fontsize - 1)
@@ -490,25 +483,21 @@ def causality_data(tmm, result=None, n_oct=1, fig=None, ax=None, gs=None, figsiz
        ``d_min``. The accumulated curve must finish below the depth line, which is the constraint itself.
     3. The same curve as fractional-octave bands, which shows each band's contribution directly.
 
-    Most of ``d_min`` is usually accumulated where the absorption curve looks worst: the ``1 / f**2`` weight of
-    the sum rule makes a mediocre low-frequency roll-off contribute far more minimum thickness than a flat
-    high-frequency plateau.
-
     Parameters
     ----------
-    tmm : class
-        A computed rigid-backed TMM object.
+    tmm : TMM
+        A computed rigid-backed treatment.
     result : dict, optional
         A ``TMM.causality_check()`` result. Passing a result keeps the figure consistent with numbers already
         inspected. If omitted, one is computed with default options.
     n_oct : int, optional
         Fractional octave resolution of the band panel, following the ``TMM.filter_alpha`` convention.
-    fig : class
-        Matplotlib Figure object.
-    ax : class
-        List of Matplotlib Axes objects.
-    gs : class
-        Matplotlib GridSpec object.
+    fig : Figure, optional
+        Matplotlib Figure to draw on.
+    ax : list of Axes, optional
+        Matplotlib Axes to draw on.
+    gs : GridSpec, optional
+        Matplotlib GridSpec for the subplots.
     figsize : tuple, optional
         Figure size.
     base_fontsize : int, optional

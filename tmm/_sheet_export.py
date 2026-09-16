@@ -1,9 +1,11 @@
 """
 Spreadsheet and CSV export helpers for :class:`tmm.tmm.TMM`.
 
-This module keeps the file-format and Excel-chart details out of ``tmm.py``.
-The public API remains ``TMM.save2sheet()``; functions here expect a computed
-``TMM`` instance and use its method-aware layer-report helpers for metadata.
+This module keeps the file-format and Excel-chart details out of ``tmm.py``. The public API remains
+``TMM.save2sheet()``; functions here expect a computed ``TMM`` instance and use its method-aware layer-report helpers
+for metadata.
+
+For further information check the function specific documentation.
 """
 
 from __future__ import annotations
@@ -39,17 +41,8 @@ def save2sheet(
     """
     Export selected TMM results to XLSX or CSV.
 
-    XLSX exports contain ``Data``, ``Bands`` and ``Setup`` sheets.  The
-    ``Setup`` sheet stores the TMM setup and method-aware layer report, so the
-    workbook is self-contained.  CSV exports keep numeric data and metadata in
-    separate files: the selected-method data are written to ``.csv`` and, when
-    ``metadata=True``, the setup/layer report is written to
-    ``*_metadata.csv``.
-
-    When ``export_all=True`` the CSV export is diagnostic rather than
-    selected-method-only: it contains angle-wise impedance and absorption,
-    field-incidence diffuse impedance/absorption, and Paris diffuse absorption.
-    ``export_all`` is CSV-only.
+    Implements ``TMM.save2sheet()``; see that method for the sheet layout, the CSV sidecar files and the
+    ``export_all`` diagnostic export.
     """
     if chart_styles is None:
         chart_styles = [35, 36]

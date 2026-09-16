@@ -1,9 +1,10 @@
 """
 HDF5 persistence helpers.
 
-This module stores Python object attributes and nested dictionaries in HDF5
-files. The helpers are used by ``TMM.save()`` and ``TMM.load()`` as a
-package-internal checkpoint format.
+This module stores Python object attributes and nested dictionaries in HDF5 files. The helpers are used by
+``TMM.save()`` and ``TMM.load()`` as a package-internal checkpoint format.
+
+For further information check the function specific documentation.
 """
 
 from pathlib import Path
@@ -32,16 +33,16 @@ def _decode_key(key):
 
 def save_dict_to_hdf5(dic, key, h5file):
     """
-    Saves dictionary into HDF5 file.
+    Save a dictionary into an open HDF5 file as a group.
 
     Parameters
     ----------
-    dic : dictionary
-        Python dictionary that will be saved into the h5 file.
+    dic : dict
+        Dictionary to store, possibly nested.
     key : string
-        Dictionary key.
+        Group name.
     h5file : h5py.File
-        Output .h5 file that is already open.
+        Output file, already open.
     """
     group = h5file.create_group(_encode_key(key))
     recursively_save_dict_contents_to_group(h5file, group.name + "/", dic)
@@ -49,16 +50,16 @@ def save_dict_to_hdf5(dic, key, h5file):
 
 def recursively_save_dict_contents_to_group(h5file, path, dic):
     """
-    Recursively saves dictionary into HDF5 group. Called when a dictionary has other dictionaries inside it.
+    Write a dictionary's items under an HDF5 group, recursing into nested dictionaries.
 
     Parameters
     ----------
     h5file : h5py.File
-        Output .h5 file that is already open.
+        Output file, already open.
     path : string
-        h5 group path.
-    dic : dictionary
-        Python dictionary that will be saved into the h5 file.
+        Group path.
+    dic : dict
+        Dictionary to store.
     """
     for key, item in dic.items():
         encoded_key = _encode_key(key)
@@ -72,36 +73,36 @@ def recursively_save_dict_contents_to_group(h5file, path, dic):
 
 def load_dict_from_hdf5(h5file, key):
     """
-    Load dictionary from HDF5 file.
+    Load a dictionary from an open HDF5 file.
 
     Parameters
     ----------
     h5file : h5py.File
-        Input .h5 file that is already open.
+        Input file, already open.
     key : string
-        Dictionary key.
+        Group name.
 
     Returns
     -------
-    Dictionary that can contain other dictionaries inside.
+    Dictionary, possibly nested.
     """
     return recursively_load_dict_contents_from_group(h5file, _encode_key(key) + "/")
 
 
 def recursively_load_dict_contents_from_group(h5file, path):
     """
-    Recursively loads dictionaries from HDF5 group.
+    Read an HDF5 group back into a dictionary, recursing into subgroups.
 
     Parameters
     ----------
     h5file : h5py.File
-        Input .h5 file that is already open.
+        Input file, already open.
     path : string
-        h5 group path.
+        Group path.
 
     Returns
     -------
-    Dictionary containing the values inside the h5 group.
+    Dictionary with the group's contents.
     """
     ans = {}
     for key, item in h5file[path].items():
@@ -132,16 +133,16 @@ def _parse_scalar(value):
 
 def parse_dataset_item(item):
     """
-    Parses a HDF5 Dataset based on the datatype.
+    Convert an HDF5 dataset to a Python or NumPy value according to its stored type.
 
     Parameters
     ----------
     item : h5py.Dataset
-        Dataset containing data that will be parsed.
+        Dataset to convert.
 
     Returns
     -------
-    Parsed dataset.
+    Scalar, list or array, depending on the stored type.
     """
     value = item[()]
     if isinstance(value, np.ndarray):
@@ -164,20 +165,20 @@ def _hdf5_path(filename, ext=".h5", folder=None, timestamp=False):
 
 def save_class_to_hdf5(self, filename="class", ext=".h5", folder=None, timestamp=False):
     """
-    Saves a Class into a HDF5 file.
+    Save an object's attributes into an HDF5 file.
 
     Parameters
     ----------
-    self : Class
-        Python Class object.
+    self : object
+        Object whose attributes are stored.
     filename : string, optional
         Output filename.
     ext : string, optional
         Output extension.
     folder : None or string, optional
-        Output folder. If 'None' is passed the current folder is used.
+        Output folder. If ``None``, the current working directory is used.
     timestamp : bool, optional
-        Boolean to apply timestamping to the output filename.
+        If True, prefix the filename with a timestamp.
     """
     outfile = _hdf5_path(filename, ext=ext, folder=folder, timestamp=timestamp)
 
@@ -191,18 +192,18 @@ def save_class_to_hdf5(self, filename="class", ext=".h5", folder=None, timestamp
 
 def load_class_from_hdf5(self, filename, ext=".h5", folder=None):
     """
-    Loads Class attributes form HDF5 file.
+    Load attributes from an HDF5 file onto an object.
 
     Parameters
     ----------
-    self : Class
-        Python Class object.
+    self : object
+        Object that receives the attributes.
     filename : string
         Input filename.
     ext : string, optional
         Input extension.
     folder : None or string, optional
-        Input folder. If 'None' is passed the current folder is used.
+        Input folder. If ``None``, the current working directory is used.
     """
     infile = _hdf5_path(filename, ext=ext, folder=folder, timestamp=False)
 

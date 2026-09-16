@@ -1,4 +1,4 @@
-""""
+"""
 Utility functions.
 
 For further information check the function specific documentation.
@@ -17,22 +17,18 @@ base_nominal_frequencies = np.array([
 
 class AirProperties:
     """
-    Computes properties of humid air.
+    Compute the properties of humid air from temperature, humidity and pressure.
     """
     def __init__(self, t0=20.0, rh=30.0, p0=101325.0):
         """
         Parameters
         ----------
-        c0 : float, optional
-            Speed of sound [m/s] in air
-        rho0 : float, optional
-            Air volume density [kg/m³]
-        t0 : float or int, optional
-            Temperature in Celsius [C]
+        t0 : float, optional
+            Temperature [°C]
         rh : float, optional
-            Relative humidity in percentage [%]
+            Relative humidity [%]
         p0 : float, optional
-            Atmospheric pressure in Pascal [Pa]
+            Atmospheric pressure [Pa]
         """
         # Double precision is required here. The saturated vapour pressure below cancels terms of order
         # 1e6 down to order 1e3, which costs roughly three decimal digits, and the remaining properties
@@ -44,7 +40,7 @@ class AirProperties:
 
     @property
     def temp_kelvin(self):
-        """Returns temperature in Kelvins."""
+        """Return the temperature in kelvin."""
         return self.t0 + 273.16
 
     @property
@@ -69,8 +65,10 @@ class AirProperties:
 
     def standardized_c0_rho0(self):
         """
-        This method is used to calculate the standardized value of the sound speed and air density based on measurements
-        of temperature, humidity and atmospheric pressure. It will overwrite the user supplied values.
+        Return the air properties derived from temperature, humidity and pressure.
+
+        The dictionary holds the density, speed of sound, viscosity, Prandtl number, specific heat ratio,
+        thermal conductivity and constant-pressure specific heat, plus the three inputs.
         """
         # Constants
         r = 287.031  # Gas constant for air [J/K/kg]
@@ -110,16 +108,16 @@ class AirProperties:
 
     def air_absorption(self, freq):
         """
-        Calculates the air absorption coefficient in [m^-1].
+        Return the air absorption coefficient [1/m] at each frequency.
 
         Parameters
         ----------
         freq : array
-            Array of frequencies.
+            Frequencies [Hz].
 
         Returns
-        ----------
-        Array of air absorption values.
+        -------
+        Array of air absorption values, same length as ``freq``.
         """
         t_0 = 293.15  # Reference temperature [k]
         t_01 = 273.15  # 0 [C] in [k]
@@ -146,18 +144,18 @@ class AirProperties:
 
 def find_nearest(array, value):
     """
-    Function to find closest frequency in frequency array. Returns closest value and position index.
+    Return the array element closest to ``value`` and its index.
 
     Parameters
     ----------
     array : array
-        Array in which to search the closest value.
-    value : int or float
-        Value to be searched.
+        Values to search.
+    value : float
+        Target value.
 
     Returns
     -------
-    Closest value found in the array and index of the closest value.
+    Closest element and its index.
     """
     array = np.array(array)
     idx = (np.abs(array - value)).argmin()
@@ -168,23 +166,23 @@ def find_nearest(array, value):
 
 def filter_values(freq, values, n_oct=1):
     """
-    Filters the given values into n_oct bands.
+    Average ``values`` into fractional-octave bands.
 
     Parameters
     ----------
     freq : ndarray
-        Array containing the frequency axis.
+        Frequency axis [Hz].
     values : ndarray
-        Array containing the magnitude values to be filtered.
+        Values to average, same length as ``freq``.
     n_oct : int, optional
-        Fractional octave bands that the absorption will be filtered to.
+        Fractional-octave resolution: ``1`` for octave bands, ``3`` for third-octave bands.
 
     Returns
     -------
     bands : ndarray
-        An array containing the center frequencies of the available bands.
+        Centre frequencies of the bands that fit inside ``freq``.
     result : ndarray
-        An array containing the filtered values in the available bands.
+        Band-averaged values.
     """
     bands = nth_octave(n_oct, fmin=min(freq), fmax=max(freq))
     df_bands = bands[1][1] - bands[0][1]
@@ -203,14 +201,22 @@ def filter_values(freq, values, n_oct=1):
 
 
 def nth_octave(fraction, fmin=20, fmax=20000):
-    """ ANSI s1.11-2004 && IEC 61260-1-2014
-    Array of frequencies and its edges according to the ANSI and IEC standard.
-    :param fraction: Bandwidth 'b'. Examples: 1/3-octave b=3, 1-octave b=1,
-    2/3-octave b = 3/2
-    :param limits: It is a list with the minimum and maximum frequency that
-    the array should have. Example: [12,20000]
-    :returns: Frequency array, lower edge array and upper edge array
-    :rtype: list, list, list
+    """
+    Return fractional-octave band centres and edges per ANSI S1.11-2004 and IEC 61260-1:2014.
+
+    Parameters
+    ----------
+    fraction : int
+        Bandwidth denominator ``b``: ``1`` for octave bands, ``3`` for third-octave bands.
+    fmin : float, optional
+        Lowest frequency the bands must cover [Hz].
+    fmax : float, optional
+        Highest frequency the bands must cover [Hz].
+
+    Returns
+    -------
+    ndarray
+        Shape ``(n_bands, 3)``: lower edge, nominal centre frequency and upper edge of each band [Hz].
     """
     limits = [fmin, fmax]
 
@@ -244,8 +250,20 @@ def nth_octave(fraction, fmin=20, fmax=20000):
 
 
 def band_edges(freq, fraction):
-    """ ANSI s1.11-2004 && IEC 61260-1-2014
-    Frequency band edge values according to the ANSI and IEC standard.
+    """
+    Return band edges for given centre frequencies per ANSI S1.11-2004 and IEC 61260-1:2014.
+
+    Parameters
+    ----------
+    freq : ndarray
+        Band centre frequencies [Hz].
+    fraction : int
+        Bandwidth denominator ``b``, as in ``nth_octave``.
+
+    Returns
+    -------
+    ndarray
+        Shape ``(len(freq), 3)``: lower edge, centre frequency and upper edge of each band [Hz].
     """
     # Octave ratio g (ANSI s1.11, 3.2, pg. 2)
     g = 10 ** (3 / 10)  # Or g = 2

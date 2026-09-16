@@ -1,14 +1,14 @@
 """
-Toolbox for design and prediction of multilayered acoustic treatments. 
+Toolbox for design and prediction of multilayered acoustic treatments.
 Also contains a material model based on the GRAS database.
 
-Developed by Rinaldi Petrolli. 
-For questions about usage, bugs, licensing and/or contributions contact me at rinaldipp@gmail.com.
+Developed by Rinaldi Petrolli.
+For questions about usage, bugs, licensing and/or contributions contact rinaldipp@gmail.com.
 
 References
 ----------
-[1] R. Petrolli, A. Zorzo and P. D'Antonio, " Comparison of measurement and prediction for acoustical treatments 
-    designed with Transfer Matrix Models ", in Euronoise, October 2021.
+[1] R. Petrolli, A. Zorzo and P. D'Antonio, "Comparison of measurement and prediction for acoustical treatments
+    designed with Transfer Matrix Models", in Euronoise, October 2021.
 
 For further information check the function specific documentation.
 """
@@ -42,16 +42,13 @@ class TMM:
     """
     Transfer Matrix Method model for multilayer acoustic treatments.
 
-    A ``TMM`` object defines a frequency grid, incidence condition, reference
-    areas, and a front-to-rear layer stack. Layers are added in physical order
-    from the incident face toward the rear termination, then ``compute()``
-    evaluates surface impedance, admittance, and absorption for the selected
-    backing condition.
+    A ``TMM`` object defines a frequency grid, incidence condition, reference areas, and a front-to-rear layer stack.
+    Layers are added in physical order from the incident face toward the rear termination, then ``compute()``
+    evaluates surface impedance, admittance, and absorption for the selected backing condition.
 
-    The class also provides plotting, HDF5 persistence, spreadsheet/CSV export,
-    and fractional-octave post-processing helpers. ``display_name`` and
-    ``color`` are cosmetic metadata used by plots and reports; they do not
-    change the transfer-matrix calculation.
+    The class also provides plotting, HDF5 persistence, spreadsheet/CSV export, and fractional-octave post-processing
+    helpers. ``display_name`` and ``color`` are cosmetic metadata used by plots and reports; they do not change the
+    transfer-matrix calculation.
     """
     def __init__(self, fmin=20, fmax=5000, df=1, incidence="diffuse", incidence_angle=None, project_folder=None,
                  filename=None, display_name=None, color=None, x_scale="lin", diffuse_method="field", s0=1.0,
@@ -69,11 +66,10 @@ class TMM:
             spacing is geometric, running from 0.02 Hz to 5.5 Hz across the default 20 Hz to 5 kHz band. It
             does not apply while an explicit ``freq`` vector is set.
         incidence : string, optional
-            String containing the desired type of incidence. ``'normal'`` is normal incidence, ``'angle'`` is a
-            single oblique angle, and ``'diffuse'`` is a field-incidence approximation. Diffuse-incidence
-            assumptions may not be appropriate for all treatment types.
-        incidence_angle : list of ints, optional
-            List containing the minimum and maximum incidence angles and the step size.
+            ``'normal'`` for normal incidence, ``'angle'`` for a single oblique angle, or ``'diffuse'`` for a
+            diffuse-field approximation.
+        incidence_angle : list of float, optional
+            Minimum angle, maximum angle and step, in degrees.
         project_folder : string, optional
             Path to which files will be saved. If None is passed the current directory will be used.
         filename : string, optional
@@ -87,11 +83,10 @@ class TMM:
             ``'log'`` for a logarithmic one. It does not affect plotting, and it does not apply while an
             explicit ``freq`` vector is set.
         diffuse_method : string, optional
-            Method used when ``incidence='diffuse'``. ``'field'`` computes a field-incidence impedance from an
-            angular admittance average over the configured incidence angles. ``'paris'`` computes the
-            statistical diffuse absorption coefficient as a ratio of angular integrals: the numerator integrates
-            ``alpha(theta)*sin(theta)*cos(theta)`` and the denominator integrates ``sin(theta)*cos(theta)`` over
-            the configured angular range. See ``field_impedance()`` for the field-incidence impedance formula.
+            Method used when ``incidence='diffuse'``. ``'field'`` averages admittance over the configured angles
+            into a field-incidence impedance, see ``field_impedance()``. ``'paris'`` averages angle-wise
+            absorption into a statistical diffuse absorption coefficient, see
+            ``diffuse_absorption_coefficient()``.
         s0 : float, optional
             Front/reference area in square meters used by the volume-velocity transfer matrices. The default
             value of 1.0 keeps impedances in specific-acoustic-impedance form.
@@ -268,7 +263,7 @@ class TMM:
     @staticmethod
     def _as_frequency_vector(freq):
         """Validate an explicit frequency vector (Hz): non-empty, 1-D, strictly ascending.
-        Spacing may be non-uniform — TMM evaluates each frequency independently."""
+        Spacing may be non-uniform. TMM evaluates each frequency independently."""
         freq = np.asarray(freq, dtype=float).ravel()
         if freq.size == 0:
             raise ValueError("freq must contain at least one frequency in Hz.")
@@ -736,7 +731,7 @@ class TMM:
 
     @property
     def depth(self):
-        """Returns the treatment depth in millimeters."""
+        """Return the treatment depth in millimeters."""
         return sum(value["thickness [mm]"] for value in self.matrix.values() if "thickness [mm]" in value)
 
     @property
@@ -836,8 +831,8 @@ class TMM:
         Parameters
         ----------
         angle_idx : int, optional
-            Positional index of the desired angle in 'self.incidence_angle'. On an object returned by
-            'reduced_copy()' this indexes the retained angles instead, and the reflection is evaluated at
+            Positional index of the desired angle in ``self.incidence_angle``. On an object returned by
+            ``reduced_copy()`` this indexes the retained angles instead, and the reflection is evaluated at
             the angle those columns were actually computed for.
 
         Returns
@@ -886,69 +881,46 @@ class TMM:
 
     def equivalent_fluid_model(self, sigma, model="mac", fibre_type=1, porosity=0.95, tortuosity=1.0):
         """
-        Return the complex propagation constant ``kc`` and characteristic impedance
-        ``zc`` for an equivalent-fluid porous material.
+        Return the complex propagation constant ``kc`` and characteristic impedance ``zc`` for an equivalent-fluid
+        porous material.
 
-        These models treat the porous layer as an equivalent fluid with a complex
-        propagation constant and characteristic impedance. Empirical branches are
-        useful when flow resistivity is the only measured material parameter, which
-        is common in practical absorber design, but the selected model should remain
-        compatible with the material class and applicability range of its source
-        formulation.
-
-        The coefficient-set models use the common power-law form
-        ``kc = k0*(1 + C1*X**(-C2) - 1j*C3*X**(-C4))`` and
-        ``Zc = Z0*(1 + C5*X**(-C6) - 1j*C7*X**(-C8))``, where
-        ``X = rho0*f/sigma`` and ``sigma`` is in SI units [Pa*s/m2] inside this
-        method. This family includes ``db``, ``miki``, ``qunli``, ``mac``,
-        ``mechel_gf_lowX``, ``mechel_gf_highX``, ``mechel_rf_lowX``, and
-        ``mechel_rf_highX``. The implementation follows the generic empirical
-        equivalent-fluid form presented in Cox and D'Antonio, *Acoustic Absorbers
-        and Diffusers*, 3rd ed., section 6.5.1. The coefficient table is
-        consistent with the Delany-Bazley-Miki model options listed in the COMSOL
-        Acoustics Module porous-model documentation:
+        The coefficient-set models use the common power-law form ``kc = k0*(1 + C1*X**(-C2) - 1j*C3*X**(-C4))`` and
+        ``Zc = Z0*(1 + C5*X**(-C6) - 1j*C7*X**(-C8))``, where ``X = rho0*f/sigma`` and ``sigma`` is in SI units
+        [Pa*s/m2] inside this method. This family includes ``db``, ``miki``, ``qunli``, ``mac``, ``mechel_gf_lowX``,
+        ``mechel_gf_highX``, ``mechel_rf_lowX``, and ``mechel_rf_highX``. The implementation follows the generic
+        empirical equivalent-fluid form presented in Cox and D'Antonio, *Acoustic Absorbers and Diffusers*, 3rd ed.,
+        section 6.5.1. The coefficient table is consistent with the Delany-Bazley-Miki model options listed in the
+        COMSOL Acoustics Module porous-model documentation:
         https://doc.comsol.com/6.4/doc/com.comsol.help.aco/aco_ug_pressure.05.005.html#1226466.
 
-        The remaining branches use separate equations rather than the shared
-        coefficient-set form. ``komatsu`` follows Komatsu (2008), equations 15-18,
-        using powers of ``2 - log10(f/sigma)``. ``mechel_1976`` follows Mechel's
-        low-frequency extension of the Delany-Bazley absorber formula and uses
-        ``porosity`` as the open porosity ``h``. ``mechel_grundmann`` keeps the
-        Mechel-Grundmann polynomial formulation from the Cox and D'Antonio reference
-        implementation. ``wilson_2015`` implements Wilson (2015), equations 24-25,
-        with unit shape factors; ``porosity`` maps to ``phi`` and ``tortuosity``
-        is interpreted as the high-frequency tortuosity-like factor
-        ``alpha_inf = q**2``, so Wilson's internal ``q`` is computed as
-        ``sqrt(tortuosity)``. ``wilson_db`` keeps the compact Wilson relaxation
-        model from the Cox and D'Antonio MATLAB reference script.
+        The remaining branches use separate equations. ``komatsu`` follows Komatsu (2008), equations 15-18, using
+        powers of ``2 - log10(f/sigma)``. ``mechel_1976`` follows Mechel's low-frequency extension of the
+        Delany-Bazley absorber formula and uses ``porosity`` as the open porosity ``h``. ``mechel_grundmann`` keeps
+        the Mechel-Grundmann polynomial formulation from the Cox and D'Antonio reference implementation.
+        ``wilson_2015`` implements Wilson (2015), equations 24-25, with unit shape factors, ``porosity`` mapped to
+        ``phi`` and ``tortuosity`` mapped as described under Parameters. ``wilson_db`` keeps the compact Wilson
+        relaxation model from the Cox and D'Antonio MATLAB reference script.
 
-        Model-selection notes: use the empirical coefficient-set models when only
-        flow resistivity is known and the material falls within the source model's
-        intended range. Use ``mechel_1976`` when open porosity is part of the
-        material definition. Use ``wilson_2015`` when porosity and tortuosity are
-        known or can be specified. Use ``qunli`` for porous plastics and open foams
-        within the COMSOL-listed range of approximately 200-2000 Hz and
-        ``3e3 <= sigma <= 24e3`` Pa*s/m2. Use ``mac`` for the Modified
-        Champoux-Allard coefficient set within the listed frequency range of
-        approximately 45-11000 Hz.
+        Use ``mechel_1976`` when open porosity is part of the material definition and ``wilson_2015`` when porosity
+        and tortuosity are known. Use ``qunli`` for porous plastics and open foams within the COMSOL-listed range of
+        approximately 200-2000 Hz and ``3e3 <= sigma <= 24e3`` Pa*s/m2, and ``mac`` for the Modified Champoux-Allard
+        coefficient set within its listed range of approximately 45-11000 Hz.
 
         Parameters
         ----------
         sigma : float
-            Flow resistivity in SI units [Pa*s/m2]. ``porous_layer()`` accepts
-            [kPa*s/m2] and converts before calling this method.
+            Flow resistivity in SI units [Pa*s/m2]. ``porous_layer()`` accepts [kPa*s/m2] and converts before calling
+            this method.
         model : str, optional
-            Equivalent-fluid model name.
+            Equivalent-fluid model name, one of the branches listed above.
         fibre_type : int, optional
-            Fibre type for ``mechel_grundmann``. ``1`` is basalt/rock wool and ``2``
-            is glass fibre.
+            Fibre type for ``mechel_grundmann``. ``1`` is basalt/rock wool and ``2`` is glass fibre.
         porosity : float, optional
-            Open pore volume fraction for branches that expose porosity. Used by
-            ``mechel_1976``, ``wilson_2015``, and ``wilson_db``.
+            Open pore volume fraction for branches that expose porosity. Used by ``mechel_1976``, ``wilson_2015``, and
+            ``wilson_db``.
         tortuosity : float, optional
-            High-frequency tortuosity-like factor for ``model="wilson_2015"``.
-            Wilson's internal ``q`` parameter is computed as
-            ``sqrt(tortuosity)``.
+            High-frequency tortuosity-like factor for ``model="wilson_2015"``. Wilson's internal ``q`` parameter is
+            computed as ``sqrt(tortuosity)``.
 
         Returns
         -------
@@ -1116,7 +1088,7 @@ class TMM:
 
     def porous_layer(self, sigma=27, t=5, model="mac", fibre_type=1, porosity=0.95, tortuosity=1.0, layer=None):
         """
-        Adds a layer of porous material to the existing device.
+        Add a porous layer modelled as an equivalent fluid.
 
         The porous material is treated as an equivalent fluid with complex characteristic impedance ``Zc`` and
         complex wavenumber ``kc`` from the selected empirical model. For oblique incidence, the tangential
@@ -1134,17 +1106,17 @@ class TMM:
         t : float or int, optional
             Thickness of the porous material [mm]
         model : string, optional
-            Name of the empirical model.
-        fibre_type : int , optional
-            Fibre type for Mechel and Grundmann model. 1 for basalt or rock wool and  2  for glass fibre.
+            Equivalent-fluid model name. See ``equivalent_fluid_model()`` for the options.
+        fibre_type : int, optional
+            Fibre type for the Mechel-Grundmann model: ``1`` for basalt or rock wool, ``2`` for glass fibre.
         porosity : float, optional
-            Open pore volume fraction for models that expose it. Currently this is used by
-            ``model="wilson_2015"``, ``model="wilson_db"``, and ``model="mechel_1976"``.
+            Open pore volume fraction for models that expose it. Used by ``model="wilson_2015"``,
+            ``model="wilson_db"``, and ``model="mechel_1976"``.
         tortuosity : float, optional
             High-frequency tortuosity-like factor for ``model="wilson_2015"``.
             Wilson's internal ``q`` is computed as ``sqrt(tortuosity)``.
         layer : None or int, optional
-            Optional value to choose the layer level. If None is passed the layer will be adding to the existing ones.
+            Optional layer index. If ``None``, the layer is appended.
         """
         # Adjusting units
         t_meters = t / 1000  # Convert millimeters to meters
@@ -1186,7 +1158,7 @@ class TMM:
 
     def air_layer(self, t=5, layer=None):
         """
-        Adds an air layer to the existing device.
+        Add an air layer.
 
         For an inviscid air layer under oblique plane-wave incidence, the tangential wavenumber is conserved
         and the normal propagation constant is ``k0*cos(theta)``. The pressure/volume-velocity transfer matrix
@@ -1199,7 +1171,7 @@ class TMM:
         t : float or int, optional
             Thickness of the air layer [mm]
         layer : None or int, optional
-            Optional value to choose the layer level. If None is passed the layer will be adding to the existing ones.
+            Optional layer index. If ``None``, the layer is appended.
         """
         # Adjusting units
         t_meters = t / 1000  # Convert millimeters to meters
@@ -1227,10 +1199,10 @@ class TMM:
         This is an auxiliary direct-assignment utility rather than a physical transfer-matrix layer. The supplied
         scalar is interpreted as a specific surface impedance in the same units as ``self.z``. It is copied to
         ``self.z`` with length ``len(self.freq)`` and to ``self.z_angle`` with shape
-        ``(len(self.freq), len(self.incidence_angle))``. A perfectly matched normal-incidence surface is obtained
-        with ``z=self.z0``; a pressure-release surface can be represented with ``z=0``. Very large values approximate
-        a rigid wall. For angle incidence and ``diffuse_method="paris"``, the cached absorption coefficient is
-        calculated from the configured incidence angles.
+        ``(len(self.freq), len(self.incidence_angle))``. ``z=self.z0`` gives a matched surface, ``z=0`` a
+        pressure-release surface and a very large value a rigid wall. For angle incidence and
+        ``diffuse_method="paris"``, the cached absorption coefficient is calculated from the configured incidence
+        angles.
 
         Parameters
         ----------
@@ -1251,24 +1223,19 @@ class TMM:
         """
         Add a limp membrane or mass-sheet layer.
 
-        The membrane is modeled as a local pressure-jump impedance with surface mass
-        ``m_s = rho*t`` and specific impedance ``Z_m = 1j*omega*m_s``, where ``t`` is
-        converted from millimeters to meters. The transfer matrix is
-        ``[[1, Z_m/S0], [0, 1]]`` because this class uses pressure and volume velocity
-        as the matrix state; ``S0`` is the front surface area. The resulting surface
-        impedance recovered by ``compute()`` is scaled back to specific impedance.
+        The membrane is modeled as a local pressure-jump impedance with surface mass ``m_s = rho*t`` and specific
+        impedance ``Z_m = 1j*omega*m_s``, where ``t`` is converted from millimeters to meters. The transfer matrix is
+        ``[[1, Z_m/S0], [0, 1]]`` because this class uses pressure and volume velocity as the matrix state; ``S0`` is
+        the front surface area. The resulting surface impedance recovered by ``compute()`` is scaled back to specific
+        impedance.
 
-        This is the mass term used in the classical limp-membrane absorber model.
-        Brandão, *Acustica de Salas: Projeto e Modelagem*, section 2.3.2, writes the
-        membrane impedance as ``Z_m = 1j*omega*m_s`` after neglecting membrane
-        resistance, then combines it in series with the surface impedance of the
-        backing air or porous cavity. This method only adds the membrane term; air
-        cavities, porous layers, and rigid/radiation/backing conditions should be
-        modeled with subsequent layers and ``compute()``.
+        This is the mass term of the classical limp-membrane absorber model. Brandão, *Acustica de Salas: Projeto e
+        Modelagem*, section 2.3.2, writes ``Z_m = 1j*omega*m_s`` after neglecting membrane resistance and combines it
+        in series with the surface impedance of the backing cavity, which here comes from the layers behind the
+        membrane.
 
-        The model neglects bending stiffness, finite-panel modal behavior,
-        edge/support losses, and intrinsic membrane resistance. It is appropriate for
-        a limp local-reaction mass sheet, not a full structural panel model.
+        The model neglects bending stiffness, finite-panel modal behavior, edge/support losses, and intrinsic membrane
+        resistance. It is appropriate for a limp local-reaction mass sheet, not a full structural panel model.
 
         Parameters
         ----------
@@ -1277,7 +1244,7 @@ class TMM:
         rho : float or int, optional
             Material density [kg/m³]
         layer : None or int, optional
-            Optional value to choose the layer level. If None is passed the layer will be adding to the existing ones.
+            Optional layer index. If ``None``, the layer is appended.
         """
         # Adjusting units
         t_meters = t / 1000  # Convert millimeters to meters
@@ -1306,67 +1273,49 @@ class TMM:
         """
         Add a thin porous-facing or fabric sheet as a local pressure-jump layer.
 
-        The layer is represented by a zero-thickness transfer matrix
-        ``[[1, Zs/S0], [0, 1]]``, where ``Zs`` is the specific sheet impedance
-        and ``S0`` is the front surface area used by the volume-velocity matrix
-        state.
+        The layer is represented by a zero-thickness transfer matrix ``[[1, Zs/S0], [0, 1]]``, where ``Zs`` is the
+        specific sheet impedance and ``S0`` is the front surface area used by the volume-velocity matrix state.
 
-        ``method="rebillard"`` implements the unbonded thin porous-facing
-        expression from Rebillard et al. (1992), "The effect of a porous facing
-        on the impedance and the absorption coefficient of a layer of porous
-        material". The implementation uses the negligible-flexural-stiffness
-        limit. With open porosity ``h``, tortuosity ``tau``, facing thickness
-        ``e``, surface mass ``m``, and flow resistance ``R = sigma*e``, the
-        coupling term is ``I = 1j*omega*(tau - 1)*h*rho0*e + R*h**2``.
+        ``method="rebillard"`` implements the unbonded thin porous-facing expression from Rebillard et al. (1992),
+        "The effect of a porous facing on the impedance and the absorption coefficient of a layer of porous material".
+        The implementation uses the negligible-flexural-stiffness limit. With open porosity ``h``, tortuosity ``tau``,
+        facing thickness ``e``, surface mass ``m``, and flow resistance ``R = sigma*e``, the coupling term is
+        ``I = 1j*omega*(tau - 1)*h*rho0*e + R*h**2``.
 
-        ``method="pieren"`` implements the thin woven-fabric sheet impedance
-        described by Pieren (2012), "Sound absorption modeling of thin woven
-        fabrics backed by an air cavity". With ``free=True``, the sheet
-        resistance and limp surface mass are combined in parallel,
-        ``Zs = 1j*omega*m*R / (1j*omega*m + R)``. With ``free=False``, the
-        motionless fabric limit ``Zs = R`` is used. The aliases
-        ``method="pieren_free"`` and ``method="pieren_fixed"`` set this option
-        explicitly.
+        ``method="pieren"`` implements the thin woven-fabric sheet impedance described by Pieren (2012), "Sound
+        absorption modeling of thin woven fabrics backed by an air cavity". With ``free=True``, the sheet resistance
+        and limp surface mass are combined in parallel, ``Zs = 1j*omega*m*R / (1j*omega*m + R)``. With ``free=False``,
+        the motionless fabric limit ``Zs = R`` is used. The aliases ``method="pieren_free"`` and
+        ``method="pieren_fixed"`` set this option explicitly.
 
-        For ``method="rebillard"``, omitting ``surface_mass`` and
-        ``resistance`` uses a nominal thin porous-facing sheet with
-        ``surface_mass=0.25 kg/m2`` and ``resistance=200 Pa*s/m``; the other
-        defaults are ``t=1 mm``, ``porosity=0.7``, and ``tortuosity=1``. Direct
-        measured ``surface_mass`` and ``resistance`` values are preferred for
-        real fabrics. If ``surface_mass`` is set to ``None`` and ``rho`` is
-        supplied, it can be estimated as ``rho*t``; if ``resistance`` is set to
-        ``None``, it can be estimated from the ideal circular-pore expression
-        ``32*eta*t/(open_area*d**2)``. These estimates are convenience
-        fallbacks; real fabrics often require measured airflow resistance.
+        Measured ``surface_mass`` and ``resistance`` are preferred for real fabrics. If ``surface_mass`` is ``None``
+        and ``rho`` is supplied, it is estimated as ``rho*t``; if ``resistance`` is ``None``, it is estimated from the
+        ideal circular-pore expression ``32*eta*t/(open_area*d**2)``. For ``method="rebillard"``, omitting both uses a
+        nominal thin facing with ``surface_mass=0.25`` kg/m2 and ``resistance=200`` Pa*s/m.
 
         Parameters
         ----------
         t : float or int, optional
             Facing thickness [mm].
         surface_mass : float or None, optional
-            Mass per unit area [kg/m2]. If ``None`` and ``rho`` is supplied, it
-            is estimated as ``rho*t``.
+            Mass per unit area [kg/m2]. If ``None`` and ``rho`` is supplied, it is estimated as ``rho*t``.
         resistance : float or None, optional
-            Specific airflow resistance [Pa*s/m]. If ``None``, it is estimated
-            from ``d`` and ``open_area``.
+            Specific airflow resistance [Pa*s/m]. If ``None``, it is estimated from ``d`` and ``open_area``.
         porosity : float, optional
             Open porosity used by the Rebillard model.
         tortuosity : float, optional
             Tortuosity used by the Rebillard model.
         method : string, optional
-            ``"rebillard"``, ``"pieren"``, ``"pieren_free"``, or
-            ``"pieren_fixed"``.
+            ``"rebillard"``, ``"pieren"``, ``"pieren_free"``, or ``"pieren_fixed"``.
         free : bool, optional
-            For ``method="pieren"``, choose the free-moving fabric expression
-            when ``True`` or the motionless resistance-only limit when ``False``.
+            For ``method="pieren"``, choose the free-moving fabric expression when ``True`` or the motionless
+            resistance-only limit when ``False``.
         rho : float or None, optional
-            Apparent fabric density [kg/m3], used only to estimate
-            ``surface_mass`` when needed.
+            Apparent fabric density [kg/m3], used only to estimate ``surface_mass`` when needed.
         d : float or None, optional
             Equivalent pore diameter [mm], used only to estimate ``resistance``.
         s : float or None, optional
-            Equivalent pore spacing [mm], used to estimate ``open_area`` when
-            needed.
+            Equivalent pore spacing [mm], used to estimate ``open_area`` when needed.
         open_area : float or None, optional
             Open-area ratio used for the geometric resistance estimate.
         layer : None or int, optional
@@ -1380,7 +1329,8 @@ class TMM:
             method = "pieren"
             free = False
         elif method not in {"rebillard", "pieren"}:
-            raise ValueError("porous_facing_layer method must be 'rebillard', 'pieren', 'pieren_free', or 'pieren_fixed'.")
+            raise ValueError("porous_facing_layer method must be 'rebillard', 'pieren', 'pieren_free', "
+                             "or 'pieren_fixed'.")
 
         t_meters = t / 1000
         if t_meters <= 0:
@@ -1509,10 +1459,8 @@ class TMM:
         matrix. Their aperture and optional plate-mass terms are first combined as specific impedances; the matrix
         entry is then ``Zp/S0`` because the package matrices use volume velocity, where ``S0`` is ``self.s0``.
         ``"eq_fluid"`` treats the holes as finite viscothermal ducts and uses a finite-length propagation matrix.
-        When ``rho`` is supplied, the optional plate-mass path is coupled in parallel with the perforation
-        impedance. The ``"bessel_ingard"`` branch uses a full-surface limp mass ``1j*omega*rho*t``. The
-        ``"barrier"`` and ``"barrier_mpp"`` branches use the solid-fraction convention
-        ``1j*omega*rho*t*(1 - phi)``.
+        When ``rho`` is supplied, a plate-mass path is coupled in parallel with the perforation impedance, with
+        the mass convention given under ``rho`` below.
 
         ``method="barrier"`` implements the Helmholtz-resonator perforated-sheet impedance of Cox and D'Antonio,
         *Acoustic Absorbers and Diffusers*, 3rd ed., equation 7.21 (section 7.3.3.3), which combines the acoustic
@@ -1535,9 +1483,9 @@ class TMM:
         normalized by ``rho0*c0``; this method converts it to dimensional surface impedance as
         ``Zp = 32*eta*t*kr/(phi*d**2) + 1j*omega*rho0*t*km/phi``, with
         ``k = d*sqrt(omega*rho0/(4*eta))``, ``kr = sqrt(1 + k**2/32) + sqrt(2)*k*d/(32*t)``, and
-        ``km = 1 + 1/sqrt(1 + k**2/2) + 0.85*d/t``. If ``rho`` is supplied, the package adds a separate
-        solid-fraction plate-mass impedance ``1j*omega*rho*t*(1 - phi)`` in parallel with the aperture path; that
-        plate-mass coupling is a package modelling extension and is not part of Maa's pure aperture impedance.
+        ``km = 1 + 1/sqrt(1 + k**2/2) + 0.85*d/t``. If ``rho`` is supplied, the solid-fraction plate mass
+        ``1j*omega*rho*t*(1 - phi)`` is added in parallel as a package extension; it is not part of Maa's
+        aperture impedance.
 
         ``method="eq_fluid"`` treats each circular hole as a finite viscothermal duct. The circular-pore propagation
         constant and characteristic impedance are returned by ``viscothermal_circular()``; the characteristic
@@ -1565,10 +1513,7 @@ class TMM:
 
         where ``A0 = pi*a**2``. It is added as ``Z_end = 1j*omega*rho0*Delta/phi``. The real aperture end-resistance
         term is added as ``sqrt(2)*kd*eta/(2*a*phi)``, with ``kd = a*sqrt(omega*rho0/eta)``. If ``rho`` is supplied,
-        the full-surface plate mass ``1j*omega*rho*t`` is coupled in parallel with the aperture path. This branch is
-        intended for circular perforations, including microperforated geometries, where a local Bessel sheet
-        impedance is preferred over the finite-duct ``eq_fluid`` matrix or the Maa-style ``barrier_mpp``
-        approximation.
+        the full-surface plate mass ``1j*omega*rho*t`` is coupled in parallel with the aperture path.
 
         If ``open_area`` is not supplied, the method assumes a square pitch and computes
         ``phi = pi*d**2/(4*s**2)``. If ``open_area`` is supplied, ``s`` is replaced by the equivalent square pitch
@@ -1579,9 +1524,7 @@ class TMM:
         ``"nesterov"``, the circular-pattern correction listed by Cox and D'Antonio; ``"jb"`` /
         ``"jaouen_becot"``, their square-pattern Jaouen-Becot correction; and ``"beranek"``, the single-hole
         infinite-baffle approximation ``t_eff = t + 0.85*d``. All three use the 0.85 prefactor given in the book's
-        text and table 7.1. ``method="barrier_mpp"`` uses Maa's internal
-        acoustic-mass term, and ``method="bessel_ingard"`` uses the square-cell aperture end-correction term
-        described in its formulation above; neither branch uses the ``end_correction`` argument.
+        text and table 7.1.
 
         Parameters
         ----------
@@ -1770,22 +1713,18 @@ class TMM:
         ``method="barrier"``.
 
         The open-area ratio is ``phi = w/s`` unless ``open_area`` is supplied directly. The slot end correction
-        follows the Kristiansen and Vigran long-slot expression,
-        ``t_eff = t + 2*w*(-1/pi)*log(sin(pi*phi/2))``, and the slot impedance is assembled as
-        ``Zs = (Rp + 1j*omega*rho0*t_eff) / phi``, where
+        follows the long-slot expression of Kristiansen and Vigran (1994), "On the Design of Resonant Absorbers
+        Using a Slotted Plate", ``t_eff = t + 2*w*(-1/pi)*log(sin(pi*phi/2))``, and the slot impedance is
+        assembled as ``Zs = (Rp + 1j*omega*rho0*t_eff) / phi``, where
         ``Rp = 0.5*sqrt(2*eta*rho0*omega)*(4 + 2*t/w)`` represents viscous losses in the slot. If ``rho`` is
         supplied, the solid-fraction plate mass ``1j*omega*rho*t*(1 - phi)`` is coupled in parallel with the slot
-        impedance, where ``phi`` is the open-area ratio. This keeps the mass path proportional to the closed area
-        fraction of the slotted sheet.
-
-        Reference: U. R. Kristiansen and T. E. Vigran, "On the Design Of Resonant Absorbers Using a Slotted Plate"
-        (1994).
+        impedance, so the mass path scales with the closed area fraction of the sheet.
 
         Parameters
         ----------
         t : float or int, optional
             Thickness of the slotted plate [mm]
-        w: float or int, optional
+        w : float or int, optional
             Slit width [mm]
         s : float or int, optional
             Slit spacing from the center of one slit to the next [mm]
@@ -1798,7 +1737,7 @@ class TMM:
         method : string, optional
             Slotted-panel calculation method. Only ``"barrier"`` is supported.
         layer : None or int, optional
-            Optional value to choose the layer level. If None is passed the layer will be adding to the existing ones.
+            Optional layer index. If ``None``, the layer is appended.
         """
         if method != "barrier":
             raise ValueError("slotted_panel_layer method must be 'barrier'.")
@@ -1913,39 +1852,28 @@ class TMM:
         ``MaterialModel_Scene3MDF.m``. The resistive-data branches load GRAS surface-description absorption data,
         convert random-incidence absorption to a purely real normalized admittance with the 55 degree rule,
         ``Y = cos(55 deg)*(1 - sqrt(1 - alpha))/(1 + sqrt(1 - alpha))``, and interpolate the admittance onto
-        ``self.freq``. TMM intentionally uses natural cubic spline interpolation for these empirical fits. This
-        differs from the MATLAB helper endpoint-slope spline convention and avoids unstable endpoint artifacts in
-        sparse empirical data. Where scattering data are available in the bundled CSV files, ``self.scat`` is
-        interpolated in the same way. The scattering output is a TMM package addition from the CSV data; the source
-        MATLAB helpers return admittance only.
+        ``self.freq``. TMM uses natural cubic spline interpolation for these fits rather than the MATLAB helpers'
+        endpoint-slope spline, which avoids unstable endpoint artifacts in sparse data. Where the bundled CSV
+        files carry scattering data, ``self.scat`` is interpolated the same way; that output is a package
+        addition, since the MATLAB helpers return admittance only.
 
-        The ``door`` and ``window`` branches retain the hybrid construction from the original MATLAB helpers. They
-        combine a resistive absorption-data fit with a reactive mass-spring-damper panel admittance and a
-        Linkwitz-Riley-style crossover. The source helpers describe this blend as the non-linear crossover method
-        of Aretz et al. These branches are practical boundary-condition models with explicit assumptions, not
-        general material laws. TMM uses the current object's air properties rather than the helper files' hard-coded
-        ``rho0=1.21 kg/m3`` and ``c0=343 m/s`` values. The optional ``smooth`` parameter for ``door`` and ``window``
-        is a TMM extension.
+        The ``door`` and ``window`` branches keep the hybrid construction of the original helpers: a resistive
+        absorption-data fit combined with a reactive mass-spring-damper panel admittance through a
+        Linkwitz-Riley-style crossover, which the source helpers call the non-linear crossover method of Aretz
+        et al. TMM uses the current object's air properties rather than the helpers' hard-coded
+        ``rho0=1.21 kg/m3`` and ``c0=343 m/s``. The optional ``smooth`` parameter is a package extension.
 
         GRAS database: https://depositonce.tu-berlin.de//handle/11303/7506
         Supplemental data: https://asa.scitation.org/doi/suppl/10.1121/1.5096171
 
-        Available materials:
-        -------------------
-         - Floor
-         - Ceiling
-         - Door
-         - Concrete
-         - Plaster
-         - MDF
-         - Window
-
         Parameters
         ----------
         type : str, optional
-            String descriptor of the desired material available in the database.
+            One of ``"floor"``, ``"ceiling"``, ``"door"``, ``"concrete"``, ``"plaster"``, ``"mdf"`` or
+            ``"window"``.
         params : dict, optional
-            Dictionary containing calculation parameters for 'door' and 'window' materials. See the docstrings below.
+            Calculation parameters for ``"door"`` and ``"window"``: ``sample_rate``, ``crossover_frequency``,
+            ``rho_m``, ``d``, ``area``, ``f_res`` and ``smooth``. Missing keys take the branch defaults.
         """
         params = None if params is None else dict(params)
         self._scat = None
@@ -2011,7 +1939,8 @@ class TMM:
             It comprises two approaches:
 
             1) area purely resistive fit to octave-band summed absorption and transmission coefficient data. 
-               Both absorption and transmission coefficients were used since the former did not rise at low frequencies, 
+               Both absorption and transmission coefficients were used since the former did not rise at low
+               frequencies,
                indicating that the data in the dataset use was most likely measured for doors on the floor of a 
                reverberation room, hence transmission would be zero. From the perspective of this application, 
                transmission is another mechanism by which energy is lost and should be included in absorption, 
@@ -2196,7 +2125,8 @@ class TMM:
                GRAS dataset.
 
             2) area reactive Mass-Spring-Damper model of the assumed fundamental resonance of the window panels. 
-               This was included since such effects are well known be reactive, and this affects room modal frequencies. 
+               This was included since such effects are well known be reactive, and this affects room modal
+               frequencies.
                It was also deemed necessary since the fundamental resonance of the panels appeared to be lower than the 
                bandwidth the measured dataset extended to (absorption rose quite sharply at the lowest frequencies). 
                The Mass value was chosen to be consistent with the assumed material. Stiffness and Damping values were 
@@ -2315,7 +2245,7 @@ class TMM:
 
     def field_impedance(self, z):
         """
-        Calculates field-incidence impedance for a set of angle-dependent impedances.
+        Compute the field-incidence impedance from a set of angle-dependent impedances.
 
         This method averages surface admittance rather than absorption. Given angle-dependent impedance
         ``Zs(theta)``, it evaluates
@@ -2325,10 +2255,8 @@ class TMM:
         statistical diffuse absorption, which averages ``alpha(theta)`` with ``sin(theta)*cos(theta)`` weighting.
         See Aretz, *Combined Wave And Ray Based Room Acoustic Simulations Of Small Rooms*, 2012, p. 86.
 
-        Because this is a complex admittance average, the result is sensitive to the impedance reference plane.
-        A lossless top air layer can alter the averaged field-incidence impedance and the derived absorption even
-        though the angle-wise absorption coefficients are unchanged. Use ``diffuse_method='paris'`` when the desired
-        output is statistical diffuse absorption.
+        Because this is a complex admittance average, the result depends on the impedance reference plane: a
+        lossless top air layer changes it even though the angle-wise absorption is unchanged. See ``compute()``.
 
         Parameters
         ----------
@@ -2374,7 +2302,7 @@ class TMM:
 
     def compute(self, rigid_backing=True, backing=None, conj=False, show_layers=True):
         """
-        Calculates the global transfer matrix for the existing layers.
+        Compute the global transfer matrix for the existing layers.
 
         The layer matrices are multiplied from incident side to termination side. Termination is selected with
         ``backing``: ``'rigid'`` for a hard wall, ``'air'`` for an oblique plane-wave air load, or
@@ -2515,13 +2443,13 @@ class TMM:
         self._clear_stale_state()
 
     def clear_matrix(self):
-        """Removes matrix data from self.matrix to reduce file size."""
+        """Remove the cached layer matrices from ``self.matrix`` to reduce file size."""
         for matrix in self.matrix.keys():
             if "matrix" in list(self.matrix[matrix].keys()):
                 self.matrix[matrix]["matrix"] = None
 
     def reduce_size(self):
-        """Removes the value of some attributes to reduce file size."""
+        """Drop the cached layer matrices and ``z_angle`` to reduce file size."""
         self.clear_matrix()
         self._z_angle = None
         self._z_angle_angles = None
@@ -2614,7 +2542,7 @@ class TMM:
         return reduced
 
     def rebuild(self):
-        """Rebuild treatment layers to update frequency range."""
+        """Rebuild the layer matrices from the stored metadata and recompute the results."""
         matrix = self.matrix.copy()
         preserve_diffuse_method = (
             getattr(self, "_results_stale", False)
@@ -2678,7 +2606,8 @@ class TMM:
         if matrix[list(matrix.keys())[-1]]["type"] == "backing":
             backing_data = matrix[list(matrix.keys())[-1]]
             if "diffuse_method" in backing_data:
-                self._diffuse_method = current_diffuse_method if preserve_diffuse_method else backing_data["diffuse_method"]
+                self._diffuse_method = (current_diffuse_method if preserve_diffuse_method
+                                        else backing_data["diffuse_method"])
             self.compute(rigid_backing=backing_data["rigid_backing"],
                          backing=backing_data.get("backing"),
                          conj=backing_data["impedance_conjugate"],
@@ -2706,7 +2635,7 @@ class TMM:
         return f"np.array({freq.tolist()!r})"
 
     def log_rebuild(self):
-        """Logs a list of commands calls needed to recreate the TMM object."""
+        """Return the list of calls needed to recreate this object."""
         matrix = self.matrix.copy()
         optional_constructor_args = ""
         if self.x_scale != "lin" and self._freq is None:
@@ -2831,7 +2760,7 @@ class TMM:
         return logged_calls
 
     def print_rebuild(self):
-        """Prints the list of commands calls needed to recreate the TMM object."""
+        """Print the calls needed to recreate this object."""
         logged_calls = self.log_rebuild()
         for call in logged_calls:
             print(call)
@@ -2901,7 +2830,7 @@ class TMM:
 
     def show_layers(self, conversion=None):
         """
-        Method to print each layer with its details.
+        Print each layer with its details.
 
         Parameters
         ----------
@@ -3278,16 +3207,16 @@ class TMM:
 
     def filter_alpha(self, n_oct=1, view=True, show_table=False, **kwargs):
         """
-        Filters the absorption coefficient into fractional octave bands. See tmm._plot.acoustic data for kwargs.
+        Average the absorption coefficient into fractional-octave bands. See ``tmm._plot.oct_filter`` for kwargs.
 
         Parameters
         ----------
         n_oct : int, optional
-            Fractional octave bands that the absorption will be filtered to.
+            Fractional-octave resolution: ``1`` for octave bands, ``3`` for third-octave bands.
         view : bool, optional
-            Boolean to display plot with filtered absorption.
+            If True, plot the narrowband and band-averaged absorption together.
         show_table : bool, optional
-            Boolean to display the filtered values in a table.
+            If True, print the band values as a table.
 
         Returns
         -------
@@ -3328,19 +3257,15 @@ class TMM:
         """
         Save current treatment results to XLSX or CSV.
 
-        XLSX exports contain ``Data``, ``Bands`` and ``Setup`` sheets. The
-        ``Setup`` sheet stores the TMM setup and the method-aware layer report.
-        CSV exports keep numeric data and metadata separate: selected-method
-        data are written to ``.csv`` and, when ``metadata=True``, the setup and
-        layer report are written to ``*_metadata.csv``.
+        XLSX exports contain ``Data``, ``Bands`` and ``Setup`` sheets. The ``Setup`` sheet stores the TMM setup and
+        the method-aware layer report. CSV exports keep numeric data and metadata separate: selected-method data are
+        written to ``.csv`` and, when ``metadata=True``, the setup and layer report are written to ``*_metadata.csv``.
 
-        The selected-method export follows the currently computed incidence
-        settings. When ``incidence='diffuse'`` and ``diffuse_method='paris'``,
-        impedance columns are omitted because Paris averaging returns diffuse
-        absorption but does not define a unique diffuse complex impedance.
-        ``export_all=True`` is a CSV-only diagnostic export that includes
-        angle-wise impedance and absorption, field-incidence diffuse
-        impedance/absorption, and Paris diffuse absorption.
+        The selected-method export follows the currently computed incidence settings. When ``incidence='diffuse'`` and
+        ``diffuse_method='paris'``, impedance columns are omitted because Paris averaging returns diffuse absorption
+        but does not define a unique diffuse complex impedance. ``export_all=True`` is a CSV-only diagnostic export
+        that includes angle-wise impedance and absorption, field-incidence diffuse impedance/absorption, and Paris
+        diffuse absorption.
 
         Parameters
         ----------
@@ -3355,11 +3280,10 @@ class TMM:
         n_oct : int, optional
             Fractional octave bands that the absorption will be filtered to.
         metadata : bool, optional
-            If True, write a sidecar metadata CSV. XLSX workbooks always include
-            metadata in the ``Setup`` sheet.
+            If True, write a sidecar metadata CSV. XLSX workbooks always include metadata in the ``Setup`` sheet.
         export_all : bool, optional
-            If True, write a CSV-only diagnostic export containing angle-wise
-            and diffuse quantities instead of only the selected-method data.
+            If True, write a CSV-only diagnostic export containing angle-wise and diffuse quantities instead of only
+            the selected-method data.
         """
         self._raise_if_stale_results("save2sheet()")
         from tmm import _sheet_export
@@ -3379,16 +3303,13 @@ class TMM:
         """
         Save this TMM object as an HDF5 checkpoint.
 
-        The file is written to ``{project_folder}/Treatments/{filename}.h5``.
-        The ``Treatments`` folder is created when needed. The checkpoint holds
-        the reduced form produced by ``reduced_copy(keep_angles=None)``: cached
-        layer transfer matrices and ``z_angle`` are left out, while the metadata
-        ``rebuild()`` needs is retained. ``load()`` calls ``rebuild()``, which
-        recomputes both.
+        The file is written to ``{project_folder}/Treatments/{filename}.h5``. The ``Treatments`` folder is created
+        when needed. The checkpoint holds the reduced form produced by ``reduced_copy(keep_angles=None)``: cached
+        layer transfer matrices and ``z_angle`` are left out, while the metadata ``rebuild()`` needs is retained.
+        ``load()`` calls ``rebuild()``, which recomputes both.
 
-        The HDF5 file is intended as a package-internal checkpoint for
-        reopening and rebuilding a TMM object with a compatible version of this
-        package. It is not a stable interchange format for external software.
+        The HDF5 file is intended as a package-internal checkpoint for reopening and rebuilding a TMM object with a
+        compatible version of this package. It is not a stable interchange format for external software.
 
         Returns
         -------
@@ -3411,20 +3332,16 @@ class TMM:
         Parameters
         ----------
         filename : str
-            Input filename without the ``.h5`` extension. If
-            ``{project_folder}/Treatments`` exists, the file is loaded from
-            that folder. Otherwise, it is loaded directly from
-            ``project_folder``. If no project folder was set, the current
-            working directory is used.
+            Input filename without the ``.h5`` extension. If ``{project_folder}/Treatments`` exists, the file is
+            loaded from that folder. Otherwise, it is loaded directly from ``project_folder``. If no project folder
+            was set, the current working directory is used.
 
         Notes
         -----
-        Loading replaces the current object's saved attributes and then calls
-        ``rebuild()`` to reconstruct reduced layer matrices and computed
-        results. The receiver object's current ``project_folder`` is kept after
-        loading so copied HDF5 files remain attached to the project from which
-        they were loaded. The checkpoint must use layer methods and metadata
-        supported by the current package version.
+        Loading replaces the current object's saved attributes and then calls ``rebuild()`` to reconstruct reduced
+        layer matrices and computed results. The receiver object's current ``project_folder`` is kept after loading so
+        copied HDF5 files remain attached to the project from which they were loaded. The checkpoint must use layer
+        methods and metadata supported by the current package version.
         """
         project_folder = self._project_folder
         folder_check = os.path.exists(self.project_folder + os.sep + "Treatments")
@@ -3444,15 +3361,13 @@ class TMM:
         """
         Plot this treatment's acoustic response.
 
-        This is a convenience wrapper around ``tmm._plot.acoustic_data``.
-        Keyword arguments are forwarded to that function. If ``filename`` or
-        ``project_folder`` are not supplied, this method uses the treatment's
-        own ``filename`` and ``project_folder``.
+        This is a convenience wrapper around ``tmm._plot.acoustic_data``. Keyword arguments are forwarded to that
+        function. If ``filename`` or ``project_folder`` are not supplied, this method uses the treatment's own
+        ``filename`` and ``project_folder``.
 
-        The cosmetic ``display_name`` and ``color`` attributes are used by the
-        plotting backend. ``display_name`` is used as a human-facing title or
-        legend label when available, while ``color`` sets the primary treatment
-        curve color.
+        The cosmetic ``display_name`` and ``color`` attributes are used by the plotting backend. ``display_name`` is
+        used as a human-facing title or legend label when available, while ``color`` sets the primary treatment curve
+        color.
 
         Parameters
         ----------
