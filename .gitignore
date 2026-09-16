@@ -1,61 +1,18 @@
-# Editor / OS files
-.vscode/
-.idea/
-*.swp
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Python bytecode / caches
+# Python bytecode
 __pycache__/
 *.py[cod]
-*$py.class
-.pytest_cache/
-.mypy_cache/
-.pyre/
-.ruff_cache/
-.cache/
 
-# Virtual environments
-.env
-.venv/
-env/
-venv/
-ENV/
-
-# Build / packaging artifacts
+# Build / packaging
 build/
 dist/
 *.egg-info/
-.eggs/
-*.egg
-MANIFEST
 
-# Test / coverage outputs
-htmlcov/
-.coverage
-.coverage.*
-coverage.xml
-*.cover
-.tox/
-.nox/
-.hypothesis/
-
-# Local generated files and scratch outputs
-tmp/
-notebooks/
-versions/
-
-# Heavy/generated acoustic data exports
-*.pkl
-*.pickle
-*.mat
-*.pytta
-*.hdf5
+# Runtime output written by tmm (save, save2sheet, plot)
+Treatments/
 *.h5
-*.wav
+*.hdf5
 *.xlsx
-*.msh
+*.mat
 *.zip
 
 # Jupyter
