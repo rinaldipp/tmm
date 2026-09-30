@@ -171,7 +171,7 @@ def _setup_rows(treatment, conversion):
     total_depth = 0.0
     for layer_index, layer_key in enumerate(treatment._report_layer_keys(), start=1):
         rows.append((f"Layer {layer_index}", "", ""))
-        for key, value in treatment._layer_report_items(treatment.matrix[layer_key]):
+        for key, value in treatment._layer_report_items(treatment.matrix[layer_key], layer_key):
             rows.append((key, value, ""))
             if treatment._is_report_number(value) and "thickness" in key:
                 total_depth += float(value)

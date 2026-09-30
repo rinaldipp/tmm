@@ -1840,6 +1840,32 @@ class TMM:
 
         return kc, zc
 
+    @staticmethod
+    def _load_gras_bands(csv_name):
+        """
+        Read a bundled GRAS surface-description CSV file.
+
+        Each file holds three rows: band centre frequencies [Hz], random-incidence absorption coefficients and
+        scattering coefficients. The rows are returned as float arrays in that order.
+        """
+        data = pandas.read_csv(database_path() + "_csv" + os.sep + csv_name, header=None).to_numpy(dtype=float)
+        return data[0], data[1], data[2]
+
+    @staticmethod
+    def _material_model_record(type, params, bands, absorption, scattering):
+        """
+        Return the ``matrix["material_model"]`` entry for a fitted material model.
+
+        The band data are stored as lists of floats so the record survives HDF5 checkpoints unchanged.
+        ``scattering`` may be ``None`` for models without scattering data.
+        """
+        return {"type": type,
+                "params": params,
+                "measured_bands_hz": [float(f) for f in np.asarray(bands, dtype=float).ravel()],
+                "measured_absorption": [float(a) for a in np.asarray(absorption, dtype=float).ravel()],
+                "measured_scattering": None if scattering is None
+                else [float(s) for s in np.asarray(scattering, dtype=float).ravel()]}
+
     def material_model(self, type="door", params=None):
         """
         Set an empirical boundary impedance model adapted from the GRAS material helpers distributed with
@@ -1861,11 +1887,17 @@ class TMM:
         addition, since the MATLAB helpers return admittance only. ``door`` has no such data, so ``self.scat``
         stays ``None``.
 
-        The ``door`` and ``window`` branches keep the hybrid construction of the original helpers: a resistive
-        absorption-data fit combined with a reactive mass-spring-damper panel admittance through a
-        Linkwitz-Riley-style crossover, which the source helpers call the non-linear crossover method of Aretz
-        et al. TMM uses the current object's air properties rather than the helpers' hard-coded
-        ``rho0=1.21 kg/m3`` and ``c0=343 m/s``. The optional ``smooth`` parameter is a package extension.
+        The ``self.matrix["material_model"]`` record keeps, next to ``type`` and ``params``, the band center
+        frequencies, absorption coefficients and scattering coefficients that were fitted, as lists of floats
+        under ``measured_bands_hz``, ``measured_absorption`` and ``measured_scattering``. ``door`` stores its
+        summed absorption and transmission coefficients and ``None`` for scattering. ``rebuild()`` refits from
+        the bundled data, so the record documents the fit and is never read back.
+
+        The ``door`` and ``window`` branches use the hybrid construction: a resistive absorption-data fit 
+        combined with a reactive mass-spring-damper panel admittance through a Linkwitz-Riley-style crossover, 
+        which the source helpers call the non-linear crossover method of Aretz et al. TMM uses the current 
+        object's air properties rather than the helpers' hard-coded ``rho0=1.21 kg/m3`` and ``c0=343 m/s``. 
+        The optional ``smooth`` parameter is a package extension.
 
         GRAS database: https://depositonce.tu-berlin.de//handle/11303/7506
         Supplemental data: https://asa.scitation.org/doi/suppl/10.1121/1.5096171
@@ -1885,53 +1917,24 @@ class TMM:
         def material_spline(x, y):
             return CubicSpline(x, y, bc_type="natural")
 
-        if type == "floor":
-            """
-            This is a model of the floor material defined in Scene 9 of the GRAS database. 
-            It is a purely real (resistive) admittance found from the measured absorption coefficient data using a 
-            spline fit.
-            """
-            # Load the random incidence absorption coefficient data included in the GRAS database:
-            csvData = pandas.read_csv(database_path() + "_csv" + os.sep + "mat_scene09_floor.csv", header=None).T
-            fMeas = csvData[0]  # Third-octave band center frequencies
-            aMeas = csvData[1]  # Third-octave band center absorption coefficients
-            sMeas = csvData[2]  # Third-octave band center scattering coefficients
+        resistive_files = {"floor": "mat_scene09_floor.csv",
+                           "ceiling": "mat_scene09_ceiling.csv",
+                           "concrete": "mat_scene09_concrete.csv",
+                           "plaster": "mat_scene09_plaster.csv",
+                           "mdf": "mat_MDF25mmA_plane_00deg.csv"}
+
+        if type in resistive_files:
+            # Purely real (resistive) admittance from the GRAS random-incidence absorption data. ``floor``,
+            # ``ceiling``, ``concrete`` and ``plaster`` are the Scene 9 materials; ``mdf`` follows
+            # ``MaterialModel_Scene3MDF.m`` for the Scene 3 MDF panel.
+            fMeas, aMeas, sMeas = self._load_gras_bands(resistive_files[type])
 
             # Convert to purely real admittance assuming material follows '55 degree rule':
             YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
 
             # Interpolate to specific frequency list using a spline fit:
-            Yf = material_spline(fMeas, YsMeas)
-            Sf = material_spline(fMeas, sMeas)
-            YsInterp = Yf(self.freq)
-            SsInterp = Sf(self.freq)
-
-            self.z = 1 / YsInterp
-            self.scat = SsInterp
-
-        elif type == "ceiling":
-            """
-            This is a model of the ceiling material defined in Scene 9 of the GRAS database. 
-            It is a purely real (resistive) admittance found from the measured absorption coefficient data using a 
-            spline fit.
-            """
-            # Load the random incidence absorption coefficient data included in the GRAS database:
-            csvData = pandas.read_csv(database_path() + "_csv" + os.sep + "mat_scene09_ceiling.csv", header=None).T
-            fMeas = csvData[0]  # Third-octave band center frequencies
-            aMeas = csvData[1]  # Third-octave band center absorption coefficients
-            sMeas = csvData[2]  # Third-octave band center scattering coefficients
-
-            # Convert to purely real admittance assuming material follows '55 degree rule':
-            YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
-
-            # Interpolate to specific frequency list using a spline fit:
-            Yf = material_spline(fMeas, YsMeas)
-            Sf = material_spline(fMeas, sMeas)
-            YsInterp = Yf(self.freq)
-            SsInterp = Sf(self.freq)
-
-            self.z = 1 / YsInterp
-            self.scat = SsInterp
+            self.z = 1 / material_spline(fMeas, YsMeas)(self.freq)
+            self.scat = material_spline(fMeas, sMeas)(self.freq)
 
         elif type == "door":
             """
@@ -2008,6 +2011,7 @@ class TMM:
             fMeas = [125, 250, 500, 1000, 2000, 4000, ]  # Octave band centre frequencies (Hz)
             aMeas = np.asarray([0.14, 0.10, 0.06, 0.08, 0.1, 0.1, ]) + \
                     np.asarray([0.07, 0.01, 0.02, 0.03, 0.01, 0.01, ])  # Absorption and Transmission coefficients
+            sMeas = None  # No scattering data were provided for the door
 
             # Convert to purely real admittance assuming material follows '55 degree rule':
             YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
@@ -2046,79 +2050,6 @@ class TMM:
                 Ys = Ys_real + 1j * Ys_imag
 
             self.z = 1 / Ys
-
-        elif type == "concrete":
-            """
-            This is a model of the concrete material defined in Scene 9 of the GRAS database. 
-            It is a purely real (resistive) admittance found from the measured absorption coefficient data using a 
-            spline fit.
-            """
-            # Load the random incidence absorption coefficient data included in the GRAS database:
-            csvData = pandas.read_csv(database_path() + "_csv" + os.sep + "mat_scene09_concrete.csv", header=None).T
-            fMeas = csvData[0]  # Third-octave band center frequencies
-            aMeas = csvData[1]  # Third-octave band center absorption coefficients
-            sMeas = csvData[2]  # Third-octave band center scattering coefficients
-
-            # Convert to purely real admittance assuming material follows '55 degree rule':
-            YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
-
-            # Interpolate to specific frequency list using a spline fit:
-            Yf = material_spline(fMeas, YsMeas)
-            Sf = material_spline(fMeas, sMeas)
-            YsInterp = Yf(self.freq)
-            SsInterp = Sf(self.freq)
-
-            self.z = 1 / YsInterp
-            self.scat = SsInterp
-
-        elif type == "plaster":
-            """
-            This is a model of the plaster material defined in Scene 9 of the GRAS database. 
-            It is a purely real (resistive) admittance found from the measured absorption coefficient data using a 
-            spline fit.
-            """
-            # Load the random incidence absorption coefficient data included in the GRAS database:
-            csvData = pandas.read_csv(database_path() + "_csv" + os.sep + "mat_scene09_plaster.csv", header=None).T
-            fMeas = csvData[0]  # Third-octave band center frequencies
-            aMeas = csvData[1]  # Third-octave band center absorption coefficients
-            sMeas = csvData[2]  # Third-octave band center scattering coefficients
-
-            # Convert to purely real admittance assuming material follows '55 degree rule':
-            YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
-
-            # Interpolate to specific frequency list using a spline fit:
-            Yf = material_spline(fMeas, YsMeas)
-            Sf = material_spline(fMeas, sMeas)
-            YsInterp = Yf(self.freq)
-            SsInterp = Sf(self.freq)
-
-            self.z = 1 / YsInterp
-            self.scat = SsInterp
-
-        elif type == "mdf":
-            """
-            This is a Python adaptation of ``MaterialModel_Scene3MDF.m`` for the MDF material defined in Scene 3 of
-            the GRAS database.
-            It is a purely real (resistive) admittance found from the measured absorption coefficient data using a 
-            spline fit.
-            """
-            # Load the random incidence absorption coefficient data included in the GRAS database:
-            csvData = pandas.read_csv(database_path() + "_csv" + os.sep + "mat_MDF25mmA_plane_00deg.csv", header=None).T
-            fMeas = csvData[0]  # Third-octave band center frequencies
-            aMeas = csvData[1]  # Third-octave band center absorption coefficients
-            sMeas = csvData[2]  # Third-octave band center scattering coefficients
-
-            # Convert to purely real admittance assuming material follows '55 degree rule':
-            YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
-
-            # Interpolate to specific frequency list using a spline fit:
-            Yf = material_spline(fMeas, YsMeas)
-            Sf = material_spline(fMeas, sMeas)
-            YsInterp = Yf(self.freq)
-            SsInterp = Sf(self.freq)
-
-            self.z = 1 / YsInterp
-            self.scat = SsInterp
 
         elif type == "window":
             """
@@ -2191,10 +2122,7 @@ class TMM:
             smooth = params["smooth"]
 
             # Load the random incidence absorption coefficient data included in the GRAS database:
-            csvData = pandas.read_csv(database_path() + "_csv" + os.sep + "mat_scene09_windows.csv", header=None).T
-            fMeas = csvData[0]  # Third-octave band center frequencies
-            aMeas = csvData[1]  # Third-octave band center absorption coefficients
-            sMeas = csvData[2]  # Third-octave band center scattering coefficients
+            fMeas, aMeas, sMeas = self._load_gras_bands("mat_scene09_windows.csv")
 
             # Convert to purely real admittance assuming material follows '55 degree rule':
             YsMeas = np.cos(np.deg2rad(55)) * (1 - np.sqrt(1 - aMeas)) / (1 + np.sqrt(1 - aMeas))
@@ -2244,8 +2172,7 @@ class TMM:
         self.z = self.z * self.z0
         if "_material_model" not in self.filename:
             self.filename = self.filename + "_material_model"
-        self.matrix = {"material_model": {"type": type,
-                                          "params": params}}
+        self.matrix = {"material_model": self._material_model_record(type, params, fMeas, aMeas, sMeas)}
 
     def field_impedance(self, z):
         """
@@ -2774,18 +2701,21 @@ class TMM:
         """Return True for real scalar values that can be formatted numerically."""
         return isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, (bool, np.bool_))
 
-    def _layer_report_items(self, layer_data):
+    def _layer_report_items(self, layer_data, layer_key=None):
         """
         Return ordered, method-aware layer fields for text and spreadsheet reports.
 
         The stored ``self.matrix`` dictionaries intentionally keep all reconstruction metadata. This helper filters
         only the presentation layer so reports show parameters that are relevant to the selected formulation.
+        ``layer_key`` identifies the ``material_model`` record, which reports ``type`` and ``params`` only.
         """
         layer_type = layer_data.get("type")
         method = str(layer_data.get("method", "")).lower()
         model = str(layer_data.get("model", "")).lower()
 
-        if layer_type == "porous_layer":
+        if layer_key == "material_model":
+            keys = ["type", "params"]
+        elif layer_type == "porous_layer":
             keys = ["type", "model", "thickness [mm]", "flow_resistivity [k*Pa*s/m²]"]
             if model in {"mechel_1976", "wilson_db"}:
                 keys.append("porosity")
@@ -2861,7 +2791,7 @@ class TMM:
         total_depth = 0
         for i, layer_key in enumerate(self._report_layer_keys(), start=1):
             print(f"Layer {i}:")
-            for key, value in self._layer_report_items(self.matrix[layer_key]):
+            for key, value in self._layer_report_items(self.matrix[layer_key], layer_key):
                 if self._is_report_number(value):
                     if "[mm]" in key:
                         converted = key.replace("[mm]", conversion[1])
