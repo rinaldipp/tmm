@@ -37,6 +37,11 @@ plot.set_style()
 # than any real grid needs, so it only matters for a degenerate grid, which is then left effectively unrounded.
 MAX_GRID_DECIMALS = 12
 
+# Truncation of the series in rectangular_slot_layer: the Stinson-Champoux density sum over the slot-length index
+# (the width index is summed in closed form), and the Ingard end-correction sum over indices 0 to this value.
+RECT_SLOT_DENSITY_TERMS = 1000
+RECT_SLOT_END_CORRECTION_TERMS = 180
+
 
 class TMM:
     """
@@ -1788,6 +1793,141 @@ class TMM:
                               "matrix": Ts,
                               }
 
+    def _rectangular_pore_density(self, w_meters, l_meters):
+        """
+        Return the Stinson-Champoux complex density of air in a rectangular pore of sides ``w`` and ``l``.
+
+        The sum over ``n`` is evaluated in closed form. With ``b_n = (2n + 1)*pi/w`` and
+        ``q**2 = a_k**2 + 1j*omega*rho0/eta``, the identities ``sum_n 1/b_n**2 = w**2/8`` and
+        ``sum_n 1/(b_n**2 + q**2) = w*tanh(q*w/2)/(4*q)`` give
+        ``sum_n 1/(b_n**2*(b_n**2 + q**2)) = (w**2/8 - w*tanh(q*w/2)/(4*q))/q**2``. The remaining sum over ``k``
+        falls off as ``1/a_k**4``.
+        """
+        eta = self.air_prop["air_viscosity"]
+        omega = np.asarray(self.w0, dtype=float)[:, None]
+        a2 = ((np.arange(RECT_SLOT_DENSITY_TERMS) + 0.5) * 2 * np.pi / l_meters) ** 2
+        q2 = a2[None, :] + 1j * omega * self.rho0 / eta
+        q = np.sqrt(q2)
+        decay = np.exp(-q * w_meters)  # tanh(q*w/2) written for Re(q) > 0 so that large arguments cannot overflow
+        inner = (w_meters ** 2 / 8 - w_meters * (1 - decay) / (1 + decay) / (4 * q)) / q2
+        series = (inner / a2[None, :]).sum(axis=1)
+        f_function = 64j * omega[:, 0] * self.rho0 / (eta * l_meters ** 2 * w_meters ** 2) * series
+        return self.rho0 / f_function
+
+    @staticmethod
+    def _ingard_rectangular_end_correction(w_meters, l_meters, sw_meters, sl_meters):
+        """Return Ingard's one-sided end correction [m] of a rectangular aperture in a rectangular tube."""
+        m = np.arange(RECT_SLOT_END_CORRECTION_TERMS + 1, dtype=float)[:, None]
+        n = np.arange(RECT_SLOT_END_CORRECTION_TERMS + 1, dtype=float)[None, :]
+        open_area = (w_meters * l_meters) / (sw_meters * sl_meters)
+        g = np.sinc(m * l_meters / sl_meters) ** 2 * np.sinc(n * w_meters / sw_meters) ** 2 * open_area
+        weight = np.where((m == 0) ^ (n == 0), 0.5, 1.0)
+        with np.errstate(divide="ignore"):
+            terms = g * weight / np.sqrt((m / sl_meters) ** 2 + (n / sw_meters) ** 2)
+        terms[0, 0] = 0.0
+        return float(2 / np.pi * terms.sum())
+
+    def rectangular_slot_layer(self, t=10, w=5, l=20, sw=10, sl=30, rho=None, resistance=0, layer=None):
+        """
+        Add a plate perforated by a regular pattern of finite rectangular slots as a lumped transfer-matrix layer.
+
+        The plate is a local sheet with transfer matrix ``[[1, Zs], [0, 1]]``, following the rectangular-aperture
+        model of Vigran [1]. Air in a slot of width ``w`` and length ``l`` has the complex density ``rho_r = rho0/F``,
+        where ``F`` is the Stinson and Champoux [2] series given in [1], equations 1, 3 and 4,
+
+        ``F = 64j*omega*rho0/(eta*l**2*w**2) * sum_k sum_n 1/(a_k**2*b_n**2*(a_k**2 + b_n**2 + 1j*omega*rho0/eta))``
+
+        with ``a_k = (k + 1/2)*2*pi/l`` and ``b_n = (n + 1/2)*2*pi/w``. The sum over ``n`` is evaluated in closed
+        form, so only the sum over ``k`` is truncated. The one-sided end correction ``delta`` is Ingard's [3]
+        (appendix I) result for a rectangular aperture in a rectangular tube whose sides are the centre-to-centre
+        spacings ``sl`` and ``sw``, given in [1], equations 18 and 19,
+
+        ``delta = (2/pi) * sum_m sum_n g_mn*nu_mn/sqrt((m/sl)**2 + (n/sw)**2)``
+
+        over all ``(m, n)`` except ``(0, 0)``, with ``g_mn = sinc(m*l/sl)**2 * sinc(n*w/sw)**2 * phi`` and
+        ``nu_mn = 1/2`` when exactly one index is zero. With open-area ratio ``phi = w*l/(sw*sl)``, the slot
+        impedance follows the slotted-plate form of Kristiansen and Vigran [4], equations 7 and 9, with ``rho_r`` in
+        place of ``rho0`` for the air inside the slot,
+
+        ``Z_ap = (R + 1j*omega*rho_r*t + 1j*omega*rho0*2*delta)/phi``,
+
+        where ``R`` is a series flow resistance such as a fabric. The term ``1j*omega*rho_r*t`` treats the slot air
+        as a lumped mass, which holds while the plate is much thinner than the wavelength. If ``rho`` is supplied,
+        the full-surface plate mass ``1j*omega*rho*t`` is coupled in parallel with ``Z_ap``, as in the membrane and
+        aperture circuit of Kang and Fuchs [5], equations 1 and 9.
+
+        Parameters
+        ----------
+        t : float, optional
+            Plate thickness [mm].
+        w : float, optional
+            Slot width, the short side of the aperture [mm].
+        l : float, optional
+            Slot length, the long side of the aperture [mm].
+        sw : float, optional
+            Centre-to-centre spacing between slots across their width [mm].
+        sl : float, optional
+            Centre-to-centre spacing between slots along their length [mm].
+        rho : float or None, optional
+            Plate density [kg/m³]. If ``None``, the plate is rigid.
+        resistance : float, optional
+            Flow resistance in series with the slots, such as a fabric on the plate [Pa*s/m].
+        layer : None or int, optional
+            Optional layer index. If ``None``, the layer is appended.
+
+        References
+        ----------
+        [1] T. E. Vigran, "The acoustic properties of panels with rectangular apertures", Journal of the Acoustical
+            Society of America, vol. 135, pp. 2777-2784, 2014.
+        [2] M. R. Stinson and Y. Champoux, "Propagation of sound and the assignment of shape factors in model porous
+            materials having simple pore geometries", Journal of the Acoustical Society of America, vol. 91,
+            pp. 685-695, 1992.
+        [3] U. Ingard, "On the theory and design of acoustic resonators", Journal of the Acoustical Society of
+            America, vol. 25, pp. 1037-1061, 1953.
+        [4] U. R. Kristiansen and T. E. Vigran, "On the design of resonant absorbers using a slotted plate", Applied
+            Acoustics, vol. 43, pp. 39-48, 1994.
+        [5] J. Kang and H. V. Fuchs, "Predicting the absorption of open weave textiles and micro-perforated
+            membranes backed by an air space", Journal of Sound and Vibration, vol. 220, pp. 905-920, 1999.
+        """
+        if min(t, w, l, sw, sl) <= 0:
+            raise ValueError("Rectangular-slot dimensions must be greater than zero.")
+        if w > sw or l > sl:
+            raise ValueError("Slot width and length must not exceed their centre-to-centre spacings.")
+        if resistance < 0:
+            raise ValueError("resistance must not be negative.")
+
+        t_meters, w_meters, l_meters, sw_meters, sl_meters = (value / 1000 for value in (t, w, l, sw, sl))
+        open_area = (w_meters * l_meters) / (sw_meters * sl_meters)
+        end_correction = self._ingard_rectangular_end_correction(w_meters, l_meters, sw_meters, sl_meters)
+        rho_r = self._rectangular_pore_density(w_meters, l_meters)
+
+        zs = (resistance + 1j * self.w0 * rho_r * t_meters + 1j * self.w0 * self.rho0 * 2 * end_correction) / open_area
+        if rho:
+            plate_mass = 1j * self.w0 * rho * t_meters
+            zs = 1 / (1 / zs + 1 / plate_mass)
+        zs = self._broadcast_to_incidence_angles(zs / self.s0)
+
+        ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
+        zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
+        Ts = np.array([[ones, zs],
+                       [zeros, ones]])
+
+        if layer is None:
+            layer = len(self.matrix)
+
+        self.matrix[layer] = {"type": "rectangular_slot_layer",
+                              "thickness [mm]": t,
+                              "slot_width [mm]": w,
+                              "slot_length [mm]": l,
+                              "slot_spacing_width [mm]": sw,
+                              "slot_spacing_length [mm]": sl,
+                              "open_area [%]": open_area * 100,
+                              "end_correction [mm]": end_correction * 1000,
+                              "resistance [Pa*s/m]": resistance,
+                              "rho [kg/m3]": rho,
+                              "matrix": Ts,
+                              }
+
     def viscothermal_circular(self, d, open_area=None):
         """
         Return viscothermal propagation properties for a circular pore.
@@ -2513,6 +2653,15 @@ class TMM:
                                              rho=value["rho [kg/m3]"],
                                              method=value["method"],
                                              layer=key)
+                elif value["type"] == "rectangular_slot_layer":
+                    self.rectangular_slot_layer(t=value["thickness [mm]"],
+                                                w=value["slot_width [mm]"],
+                                                l=value["slot_length [mm]"],
+                                                sw=value["slot_spacing_width [mm]"],
+                                                sl=value["slot_spacing_length [mm]"],
+                                                rho=value["rho [kg/m3]"],
+                                                resistance=value["resistance [Pa*s/m]"],
+                                                layer=key)
                 elif value["type"] == "membrane_layer":
                     self.membrane_layer(t=value["thickness [mm]"],
                                         rho=value["density [kg/m³]"],
@@ -2643,6 +2792,18 @@ class TMM:
                         f"method='{value['method']}'"
                         f")"
                         )
+                elif value["type"] == "rectangular_slot_layer":
+                    logged_calls.append(
+                        f"{self.filename}.rectangular_slot_layer("
+                        f"t={value['thickness [mm]']!r}, "
+                        f"w={value['slot_width [mm]']!r}, "
+                        f"l={value['slot_length [mm]']!r}, "
+                        f"sw={value['slot_spacing_width [mm]']!r}, "
+                        f"sl={value['slot_spacing_length [mm]']!r}, "
+                        f"rho={value['rho [kg/m3]']!r}, "
+                        f"resistance={value['resistance [Pa*s/m]']!r}"
+                        f")"
+                        )
                 elif value["type"] == "membrane_layer":
                     logged_calls.append(
                         f"{self.filename}.membrane_layer("
@@ -2748,6 +2909,10 @@ class TMM:
             keys.append("rho [kg/m3]")
         elif layer_type == "slotted_panel_layer":
             keys = ["type", "method", "thickness [mm]", "slot_width [mm]", "slot_spacing [mm]", "open_area [%]",
+                    "rho [kg/m3]"]
+        elif layer_type == "rectangular_slot_layer":
+            keys = ["type", "thickness [mm]", "slot_width [mm]", "slot_length [mm]", "slot_spacing_width [mm]",
+                    "slot_spacing_length [mm]", "open_area [%]", "end_correction [mm]", "resistance [Pa*s/m]",
                     "rho [kg/m3]"]
         elif layer_type == "backing":
             keys = ["type", "backing", "rigid_backing", "diffuse_method", "impedance_conjugate"]
