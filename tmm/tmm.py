@@ -1440,28 +1440,41 @@ class TMM:
             matrix_data["free"] = free
         self.matrix[layer] = matrix_data
 
-    def _bessel_ingard_circular_sheet_impedance(self, t_meters, d_meters, open_area, rho=None):
+    @staticmethod
+    def _circular_hole_end_length(d_meters, open_area, end_correction):
+        """
+        Return the total end-correction length of both hole ends [m] for ``perforated_panel_layer``.
+        """
+        xi = np.sqrt(open_area)
+        if end_correction == "ingard":
+            # Vigran's fit to Ingard's circular aperture in a square tube, both ends: 0.96*sqrt(A0)*(...).
+            return 0.96 * np.sqrt(np.pi * d_meters ** 2 / 4) * (1 - 1.24 * xi + 0.27 * xi ** 2)
+        if end_correction == "nesterov":
+            # Cox and D'Antonio, Table 7.1: circular holes in a circular pattern.
+            return 0.85 * d_meters * (1 - 1.47 * xi + 0.47 * xi ** 3)
+        if end_correction in {"jb", "jaouen_becot"}:
+            # Cox and D'Antonio, Table 7.1: circular holes in a square pattern.
+            return 0.85 * d_meters * (1 - 1.13 * xi - 0.09 * xi ** 2 + 0.27 * xi ** 3)
+        if end_correction == "beranek":
+            # Single circular hole in an infinite baffle.
+            return 0.85 * d_meters
+        raise ValueError(
+            "perforated_panel_layer end_correction must be 'ingard', 'jb', 'jaouen_becot', 'nesterov', or 'beranek'."
+        )
+
+    def _bessel_ingard_circular_sheet_impedance(self, t_meters, d_meters, open_area, end_length, rho=None):
         """
         Return the local sheet impedance for ``perforated_panel_layer(method="bessel_ingard")``.
 
-        This combines a Bessel short-tube aperture impedance, an Ingard square-cell end correction for a regular
-        circular-hole array, a real aperture end-resistance term, and optional full-surface plate-mass coupling in
-        parallel with the aperture path. The branch is source-assembled rather than a single closed-form equation from
-        one reference.
+        The Bessel short-tube impedance is evaluated over the hole length extended by ``end_length``, and the optional
+        full-surface plate mass is coupled in parallel.
         """
         radius = d_meters / 2
         viscosity = self.air_prop["air_viscosity"]
         kd = radius * np.sqrt(self.rho0 * self.w0 / viscosity)
         bessel_argument = kd * np.sqrt(-1j)
         aperture_factor = 1 - 2 * jv(1, bessel_argument) / (bessel_argument * jv(0, bessel_argument))
-        z_aperture = 1j * self.w0 * self.rho0 * t_meters / (open_area * aperture_factor)
-
-        hole_area = np.pi * radius ** 2
-        xi = np.sqrt(open_area)
-        end_length = 0.96 * np.sqrt(hole_area) * (1 - 1.24 * xi + 0.27 * xi ** 2)
-        z_end = 1j * self.w0 * self.rho0 * end_length / open_area
-        z_end_resistance = np.sqrt(2) * kd * viscosity / (2 * radius * open_area)
-        z_sheet = z_aperture + z_end + z_end_resistance
+        z_sheet = 1j * self.w0 * self.rho0 * (t_meters + end_length) / (open_area * aperture_factor)
 
         if rho is not None:
             plate_mass = 1j * self.w0 * rho * t_meters
@@ -1512,35 +1525,33 @@ class TMM:
         ``[[cos(kc*t_eff), 1j*Zc/phi*sin(kc*t_eff)], [1j*phi/Zc*sin(kc*t_eff), cos(kc*t_eff)]]``, with the package area
         scaling applied in the same way as other layer matrices.
 
-        ``method="bessel_ingard"`` computes a local circular-aperture sheet impedance using the exact Bessel short-tube
-        aperture expression used in the microperforation formulations of [1] and [2]. Cox and D'Antonio [1], section
-        7.5.3, recommend evaluating this Bessel expression directly rather than using Maa's asymptotic approximation.
-        For hole radius ``a``, angular frequency ``omega``, air density ``rho0``, dynamic viscosity ``eta``, and
-        open-area ratio ``phi``,
+        ``method="bessel_ingard"`` follows the general circular-aperture model of Vigran [4], section 5.2.5.1 and annex
+        J, which combines the exact viscous short-tube solution with Ingard's [3] end correction. With the short-tube
+        impedance of Maa [2], equation 2, for hole radius ``a``, angular frequency ``omega``, air density ``rho0``,
+        dynamic viscosity ``eta``, and open-area ratio ``phi``,
 
         ``s = a*sqrt(-1j*omega*rho0/eta)``
 
-        ``D = 1 - 2*J1(s)/(s*J0(s))``
+        ``F = 1 - 2*J1(s)/(s*J0(s))``
 
-        ``Z_ap = 1j*omega*rho0*t/(phi*D)``.
+        ``Zp = 1j*omega*rho0*(t + Delta)/(phi*F)``,
 
-        The inertial end term uses Ingard's square-cell aperture end-correction family for circular holes in a regular
-        array,
-
-        ``Delta = 0.96*sqrt(A0)*(1 - 1.24*sqrt(phi) + 0.27*phi)``,
-
-        where ``A0 = pi*a**2``. It is added as ``Z_end = 1j*omega*rho0*Delta/phi``. The real aperture end-resistance
-        term is added as ``sqrt(2)*kd*eta/(2*a*phi)``, with ``kd = a*sqrt(omega*rho0/eta)``. If ``rho`` is supplied, the
-        full-surface plate mass ``1j*omega*rho*t`` is coupled in parallel with the aperture path.
+        where ``Delta`` is the end-correction length of both hole ends. Placing ``Delta`` inside the Bessel factor gives
+        the end mass the same viscous correction ``1/F`` as the air in the hole, and no separate end resistance is
+        added. If ``rho`` is supplied, the full-surface plate mass ``1j*omega*rho*t`` is coupled in parallel with
+        ``Zp``, as in the membrane and aperture circuit of Kang and Fuchs [5], equations 1 and 9.
 
         If ``open_area`` is not supplied, the method assumes a square pitch and computes ``phi = pi*d**2/(4*s**2)``. If
         ``open_area`` is supplied, ``s`` is replaced by the equivalent square pitch for metadata.
 
-        The ``end_correction`` options set the corrected hole length ``t_eff`` only for ``method="barrier"`` and
-        ``method="eq_fluid"``. If omitted, these two methods use ``"jb"``. Available options are: ``"nesterov"``, the
-        circular-pattern correction listed in [1]; ``"jb"`` / ``"jaouen_becot"``, their square-pattern Jaouen-Becot
-        correction; and ``"beranek"``, the single-hole infinite-baffle approximation ``t_eff = t + 0.85*d``. All three
-        use the 0.85 prefactor given in the book's text and table 7.1.
+        The ``end_correction`` options set ``Delta``, which ``method="barrier"`` and ``method="eq_fluid"`` use as
+        ``t_eff = t + Delta`` and ``method="bessel_ingard"`` places inside the Bessel factor. ``"ingard"`` is Vigran's
+        fit [4], annex J, to Ingard's end correction for a circular aperture in a square tube,
+        ``Delta = 0.96*sqrt(A0)*(1 - 1.24*sqrt(phi) + 0.27*phi)`` with ``A0 = pi*a**2``. ``"nesterov"`` is the
+        circular-pattern correction ``Delta = 0.85*d*(1 - 1.47*sqrt(phi) + 0.47*phi**1.5)`` listed in [1], table 7.1;
+        ``"jb"`` / ``"jaouen_becot"`` is the square-pattern Jaouen-Becot correction
+        ``Delta = 0.85*d*(1 - 1.13*sqrt(phi) - 0.09*phi + 0.27*phi**1.5)`` from the same table; and ``"beranek"`` is the
+        single-hole infinite-baffle approximation ``Delta = 0.85*d``.
 
         Parameters
         ----------
@@ -1558,9 +1569,9 @@ class TMM:
             ``method="bessel_ingard"`` uses the full-surface mass ``1j*omega*rho*t`` while ``method="barrier"`` and
             ``method="barrier_mpp"`` use the solid-fraction mass ``1j*omega*rho*t*(1 - phi)``.
         end_correction : string or None, optional
-            End-correction model for ``method="barrier"`` and ``method="eq_fluid"``. Options are ``"jb"`` /
-            ``"jaouen_becot"``, ``"nesterov"``, and ``"beranek"``. If ``None``, ``"jb"`` is used for those two methods.
-            This argument is ignored by ``method="barrier_mpp"`` and ``method="bessel_ingard"``.
+            End-correction model. Options are ``"ingard"``, ``"jb"`` / ``"jaouen_becot"``, ``"nesterov"``, and
+            ``"beranek"``. If ``None``, ``method="bessel_ingard"`` uses ``"ingard"`` and ``method="barrier"`` and
+            ``method="eq_fluid"`` use ``"jb"``. This argument is ignored by ``method="barrier_mpp"``.
         method : string, optional
             Chooses the perforated-plate formulation. Available options are ``"barrier"``, ``"barrier_mpp"``,
             ``"eq_fluid"``, and ``"bessel_ingard"``.
@@ -1573,6 +1584,11 @@ class TMM:
             CRC Press, 2017.
         [2] D.-Y. Maa, "Potential of microperforated panel absorber", Journal of the Acoustical Society of America,
             vol. 104, pp. 2861-2866, 1998.
+        [3] U. Ingard, "On the theory and design of acoustic resonators", Journal of the Acoustical Society of
+            America, vol. 25, pp. 1037-1061, 1953.
+        [4] T. E. Vigran, "Manual for NorFLAG, version 4.0", Trondheim, 2018.
+        [5] J. Kang and H. V. Fuchs, "Predicting the absorption of open weave textiles and micro-perforated
+            membranes backed by an air space", Journal of Sound and Vibration, vol. 220, pp. 905-920, 1999.
         """
         valid_methods = {"barrier", "barrier_mpp", "eq_fluid", "bessel_ingard"}
         if method not in valid_methods:
@@ -1580,10 +1596,11 @@ class TMM:
                 "perforated_panel_layer method must be 'barrier', 'barrier_mpp', 'eq_fluid', or 'bessel_ingard'."
             )
 
-        uses_generic_end_correction = method in {"barrier", "eq_fluid"}
+        uses_end_correction = method in {"barrier", "eq_fluid", "bessel_ingard"}
         effective_end_correction = None
-        if uses_generic_end_correction:
-            effective_end_correction = "jb" if end_correction is None else end_correction
+        if uses_end_correction:
+            default_end_correction = "ingard" if method == "bessel_ingard" else "jb"
+            effective_end_correction = default_end_correction if end_correction is None else end_correction
         elif end_correction is not None:
             warnings.warn(
                 f"end_correction is ignored for perforated_panel_layer(method='{method}'); "
@@ -1608,26 +1625,11 @@ class TMM:
         if open_area > 1:
             raise ValueError("Open area cannot be greater than 1.")
 
+        end_length = None
         t_corr = None
-        if uses_generic_end_correction:
-            if effective_end_correction == "nesterov":
-                # Cox and D'Antonio, Acoustic Absorbers and Diffusers, Table 7.1:
-                # circular holes in a circular pattern.
-                delta = 0.85 * (1 - 1.47 * open_area ** (1/2) + 0.47 * open_area ** (3/2))
-                t_corr = 2 * delta * d_meters / 2 + t_meters
-            elif effective_end_correction == "jaouen_becot" or effective_end_correction == "jb":
-                # Cox and D'Antonio, Acoustic Absorbers and Diffusers, Table 7.1:
-                # circular holes in a square pattern.
-                delta = 0.85 * (1 - 1.13 * open_area ** (1/2) - 0.09 * open_area + 0.27 * open_area ** (3/2))
-                t_corr = 2 * delta * d_meters / 2 + t_meters
-            elif effective_end_correction == "beranek":
-                # Single circular hole in an infinite baffle.
-                t_corr = t_meters + 0.85 * d_meters
-            else:
-                raise ValueError(
-                    "perforated_panel_layer end_correction must be 'jb', 'jaouen_becot', 'nesterov', "
-                    "or 'beranek'."
-                )
+        if uses_end_correction:
+            end_length = self._circular_hole_end_length(d_meters, open_area, effective_end_correction)
+            t_corr = t_meters + end_length
         vis = self.air_prop["air_viscosity"]
 
         Tp = None
@@ -1683,10 +1685,10 @@ class TMM:
 
         elif method == "bessel_ingard":
             """
-            Local circular-aperture Bessel sheet with square-cell end correction, aperture end resistance, and
-            optional full-surface plate-mass coupling.
+            Local circular-aperture Bessel sheet over the end-corrected hole length, with optional full-surface
+            plate-mass coupling.
             """
-            zpp = self._bessel_ingard_circular_sheet_impedance(t_meters, d_meters, open_area, rho=rho)
+            zpp = self._bessel_ingard_circular_sheet_impedance(t_meters, d_meters, open_area, end_length, rho=rho)
             zpp = zpp / self.s0
             zpp = self._broadcast_to_incidence_angles(zpp)
 
@@ -2799,7 +2801,8 @@ class TMM:
                     logged_calls.append(f"{self.filename}.air_layer(t={value['thickness [mm]']:0.1f})")
                 elif value["type"] == "perforated_panel_layer":
                     end_correction_arg = ""
-                    if value.get("method") in {"barrier", "eq_fluid"} and value.get("end_correction") is not None:
+                    if value.get("method") in {"barrier", "eq_fluid", "bessel_ingard"} \
+                            and value.get("end_correction") is not None:
                         end_correction_arg = f"end_correction='{value['end_correction']}', "
                     logged_calls.append(
                         f"{self.filename}.perforated_panel_layer("
@@ -2933,7 +2936,7 @@ class TMM:
                 "hole_spacing [mm]",
                 "open_area [%]",
             ]
-            if method in {"barrier", "eq_fluid"}:
+            if method in {"barrier", "eq_fluid", "bessel_ingard"}:
                 keys.append("end_correction")
             keys.append("rho [kg/m3]")
         elif layer_type == "slotted_panel_layer":
