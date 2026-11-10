@@ -614,3 +614,220 @@ def causality_data(tmm, result=None, n_oct=1, fig=None, ax=None, gs=None, figsiz
         save_matplotlib_fig(fig, filename, project_folder, **kwargs)
 
     return fig, ax, gs
+
+
+FINITE_SAMPLE_VARIANTS = {
+    "normal": ("Infinite sample (normal incidence)", "normal"),
+    "paris": ("Infinite sample (Paris)", None),
+    "thomasson": ("Finite sample (Thomasson)", {}),
+    "true": ("Finite sample, true coefficient", {"normalization": "true"}),
+    "available": ("Finite sample, available power", {"normalization": "available"}),
+    "rectangular_floor": ("Finite sample, Jeong rectangular floor", {"angle_weights": "rectangular_floor"}),
+    "irregular_floor": ("Finite sample, Jeong irregular floor", {"angle_weights": "irregular_floor"}),
+    "irregular_wall": ("Finite sample, Jeong irregular wall", {"angle_weights": "irregular_wall"}),
+}
+_FINITE_SAMPLE_KEYS = {"normalization", "angle_weights", "phi_points"}
+
+
+def _finite_sample_variant_specs(variants):
+    """
+    Return ``(label, options)`` pairs for ``finite_sample_data``.
+
+    ``options`` is ``None`` for the Paris curve, ``"normal"`` for normal incidence, and a dict of
+    ``finite_sample_absorption`` options otherwise.
+    """
+    if variants is None:
+        variants = ("paris", "thomasson")
+    elif isinstance(variants, str) and variants == "all":
+        variants = tuple(FINITE_SAMPLE_VARIANTS)
+    elif isinstance(variants, (str, dict)):
+        variants = (variants,)
+    specs = []
+    for variant in variants:
+        if isinstance(variant, str):
+            if variant not in FINITE_SAMPLE_VARIANTS:
+                raise ValueError(f"Unknown finite-sample variant {variant!r}; choose from "
+                                 f"{sorted(FINITE_SAMPLE_VARIANTS)}, 'all', or a dict of finite_sample_absorption "
+                                 "options.")
+            label, options = FINITE_SAMPLE_VARIANTS[variant]
+            specs.append((label, dict(options) if isinstance(options, dict) else options))
+        elif isinstance(variant, dict):
+            options = dict(variant)
+            label = options.pop("label", None)
+            unknown = set(options) - _FINITE_SAMPLE_KEYS
+            if unknown:
+                raise ValueError(f"Unsupported finite-sample variant keys {sorted(unknown)}; use "
+                                 f"{sorted(_FINITE_SAMPLE_KEYS)} and 'label'.")
+            if label is None:
+                parts = [f"{key}={value}" for key, value in options.items()
+                         if isinstance(value, (str, int, float))]
+                label = "Finite sample, " + (", ".join(parts) if parts else "custom")
+            specs.append((label, options))
+        else:
+            raise TypeError("Each variant must be a string shortcut or a dict of finite_sample_absorption options.")
+    return specs
+
+
+def _sample_size_label(size):
+    """Return a short label such as ``3.162 m x 3.162 m`` for one sample size."""
+    sides = np.atleast_1d(np.asarray(size, dtype=float))
+    a, b = (sides[0], sides[0]) if sides.size == 1 else sides[:2]
+    return f"{a:g} m x {b:g} m"
+
+
+def _fractional_octave_average(freq, values, n_oct):
+    """Return band centres and band means, dropping bands that contain no frequency samples."""
+    from tmm import _utils as utils
+
+    bands = utils.nth_octave(n_oct, fmin=float(np.min(freq)), fmax=float(np.max(freq)))
+    masks = [(lower <= freq) & (freq < upper) for lower, _, upper in bands]
+    filled = [i for i, mask in enumerate(masks) if np.any(mask)]
+    means = np.array([np.mean(values[masks[i]]) for i in filled])
+    return bands[filled, 1], means
+
+
+def finite_sample_data(tmm, sample_size=3.162, variants=None, n_oct=None, fig=None, ax=None, gs=None, figsize=None,
+                       base_fontsize=12, xtype="log", legend="inside", save_fig=False, project_folder=None,
+                       filename=None, **kwargs):
+    """
+    Plot the diffuse-field absorption of a finite sample for one or more ``TMM.finite_sample_absorption`` variants.
+
+    The top panel shows the narrowband absorption coefficient of each variant, with a reference line at 1 because the
+    edge effect can raise finite-sample values above it. With ``n_oct``, a second panel shows the same curves averaged
+    into fractional-octave bands.
+
+    Parameters
+    ----------
+    tmm : TMM
+        A computed treatment with ``incidence="diffuse"``, which stores the surface impedance at every angle.
+    sample_size : float, tuple of float, or list, optional
+        Sample side length or sides ``(a, b)`` [m]. A list of sizes draws one curve per size for a single finite-sample
+        variant, plus the size-independent ``"paris"`` curve.
+    variants : None, str, dict, or sequence, optional
+        Curves to draw. The string shortcuts are ``"normal"`` (normal incidence, read from the 0 degree column of
+        ``z_angle``), ``"paris"`` (infinite-sample Paris average), ``"thomasson"``, ``"true"``, ``"available"``,
+        ``"rectangular_floor"``, ``"irregular_floor"``, and ``"irregular_wall"``, and ``"all"`` selects every
+        shortcut. A dict holds ``normalization``, ``angle_weights``, or ``phi_points`` for
+        ``TMM.finite_sample_absorption`` and an optional ``label``. ``None`` draws ``"paris"`` and ``"thomasson"``.
+    n_oct : int or None, optional
+        Fractional-octave resolution of the band panel, following the ``TMM.filter_alpha`` convention. ``None`` omits
+        the panel.
+    fig : Figure, optional
+        Matplotlib Figure to draw on.
+    ax : list of Axes, optional
+        Matplotlib Axes to draw on, one per panel.
+    gs : GridSpec, optional
+        Matplotlib GridSpec for the subplots.
+    figsize : tuple, optional
+        Figure size. ``None`` gives ``(12, 6)`` for one panel and ``(12, 10)`` for two.
+    base_fontsize : int, optional
+        Base font size.
+    xtype : string, optional
+        Frequency axis type: ``"linear"`` or ``"log"``.
+    legend : string, optional
+        Legend placement option: ``"inside"`` or ``"outside"``.
+    save_fig : bool, optional
+        Option to save figure as static image.
+    project_folder : str
+        String containing the destination folder in which the image will be saved. If not defined the current active
+        folder will be used.
+    filename : str
+        String that will be used as the full or partial file name.
+    kwargs : keyword arguments, optional
+        See ``tmm._plot.save_matplotlib_fig``.
+
+    Returns
+    -------
+    Matplotlib Figure, list of Axes and GridSpec objects.
+    """
+    if tmm.incidence != "diffuse":
+        raise ValueError("Finite-sample absorption needs angle-dependent impedance; compute the treatment with "
+                         "incidence='diffuse'.")
+    specs = _finite_sample_variant_specs(variants)
+    sizes = list(sample_size) if isinstance(sample_size, list) else [sample_size]
+    if not sizes:
+        raise ValueError("sample_size must contain at least one size.")
+    if len(sizes) > 1 and sum(isinstance(options, dict) for _, options in specs) > 1:
+        raise ValueError("A list of sample sizes can be drawn for one finite-sample variant at a time.")
+
+    set_style()
+    freq = np.asarray(tmm.freq, dtype=float)
+    angles = np.asarray(tmm.incidence_angle, dtype=float)
+    curves = []
+    for label, options in specs:
+        if options is None:
+            curves.append((label, tmm.diffuse_absorption_coefficient(), "--"))
+            continue
+        if options == "normal":
+            try:
+                curves.append((label, tmm._normal_incidence_alpha(), ":"))
+            except ValueError:
+                raise ValueError("The 'normal' variant reads the 0 deg column of z_angle; compute the treatment "
+                                 "with an incidence_angle range that starts at 0 deg.") from None
+            continue
+        for size in sizes:
+            size_label = f" ({_sample_size_label(size)})" if len(sizes) > 1 else ""
+            curves.append((label + size_label, tmm.finite_sample_absorption(size, **options), "-"))
+
+    n_panels = 2 if n_oct else 1
+    if fig is None:
+        fig = plt.figure(figsize=figsize or ((12, 10) if n_panels == 2 else (12, 6)))
+    if gs is None:
+        gs = gridspec.GridSpec(n_panels, 1)
+    if ax is None:
+        ax = [fig.add_subplot(gs[i]) for i in range(n_panels)]
+
+    title = "Finite-Sample Absorption Coefficient"
+    if len(sizes) == 1:
+        title += f", {_sample_size_label(sizes[0])}"
+    title += f", {angles[0]:g}-{angles[-1]:g} deg"
+    peak = 1.0
+    color_index = 0
+    for label, alpha, linestyle in curves:
+        if linestyle == "--":
+            color = "k"
+        else:
+            color = _palette_color(color_index)
+            color_index += 1
+        ax[0].plot(freq, alpha, linewidth=2, linestyle=linestyle, color=color, label=label)
+        peak = max(peak, float(np.nanmax(alpha)))
+        if n_panels == 2:
+            centres, means = _fractional_octave_average(freq, alpha, n_oct)
+            ax[1].plot(centres, means, linewidth=1.5, linestyle=linestyle, marker="o", markersize=4, color=color,
+                       label=label)
+    ax[0].set_title(_title_with_display_name(title, [tmm]), fontsize=base_fontsize, loc="left")
+    if n_panels == 2:
+        ax[1].set_title(_title_with_display_name(f"1/{n_oct} Octave Bands", [tmm]), fontsize=base_fontsize,
+                        loc="left")
+
+    for axis in ax:
+        axis.axhline(1.0, color="0.45", linestyle=":", linewidth=1)
+        axis.set_ylabel(r"$\alpha$ [-]", fontsize=base_fontsize - 1)
+        axis.set_ylim(0, peak * 1.05)
+        axis.set_xlabel("Frequency [Hz]", fontsize=base_fontsize - 1)
+        axis.set_xscale(xtype)
+        axis.set_xlim(freq[0], freq[-1])
+        axis.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
+        axis.get_xaxis().set_minor_formatter(ticker.ScalarFormatter())
+        axis.tick_params(which="minor", length=5, rotation=-90, axis="x")
+        axis.tick_params(which="major", length=5, rotation=-90, axis="x")
+        axis.tick_params(axis="both", which="both", labelsize=base_fontsize - 2)
+        axis.minorticks_on()
+        axis.grid("minor")
+        _place_legend(axis, legend, "vertical", base_fontsize)
+
+    if legend == "outside":
+        gs.tight_layout(fig, pad=3, w_pad=1, h_pad=1, rect=[0, 0, 0.78, 1])
+    else:
+        gs.tight_layout(fig, pad=3, w_pad=1, h_pad=1)
+
+    if save_fig:
+        filename = filename if filename is not None else "finite_sample_data"
+        project_folder = project_folder if project_folder is not None else os.getcwd()
+        if "subfolder" not in kwargs:
+            kwargs["subfolder"] = "Treatments"
+        kwargs.setdefault("transparent", False)
+        kwargs.setdefault("facecolor", "white")
+        save_matplotlib_fig(fig, filename, project_folder, **kwargs)
+
+    return fig, ax, gs

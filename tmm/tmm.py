@@ -14,6 +14,7 @@ For further information check the function specific documentation.
 """
 import collections
 import copy
+import functools
 import os
 import warnings
 
@@ -21,7 +22,7 @@ import numpy as np
 import pandas
 from matplotlib import pyplot as plt
 from scipy import integrate
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import CubicHermiteSpline, CubicSpline, PchipInterpolator
 from scipy.signal import butter, freqz, savgol_filter
 from scipy.special import jv
 
@@ -41,6 +42,32 @@ MAX_GRID_DECIMALS = 12
 # (the width index is summed in closed form), and the Ingard end-correction sum over indices 0 to this value.
 RECT_SLOT_DENSITY_TERMS = 1000
 RECT_SLOT_END_CORRECTION_TERMS = 180
+
+# Angular intensity weightings w(theta) of Jeong (2013), Table II, tabulated from the phased beam-tracing results of
+# Jeong (2010). Rows are the 250 Hz to 4 kHz octave bands, columns 0 to 90 degrees in 15-degree steps. Keys follow the
+# figure captions of Jeong (2010): Table II labels its w1 block "floor in a rectangular room", but its values are the
+# irregular-room floor of Fig. 6b; w2 ("floor in an irregular room") is the rectangular-room floor of Fig. 7; w3
+# ("sidewall in a rectangular room") is the irregular-room wall of Fig. 4b. Table II prints 0.11 for w1 at 4 kHz and
+# 45 degrees; Fig. 6b shows about 1.1, and 1.11 restores the unit mean over angle of the other rows.
+JEONG_WEIGHT_BANDS = (250.0, 500.0, 1000.0, 2000.0, 4000.0)
+JEONG_WEIGHT_ANGLES = (0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0)
+JEONG_ANGLE_WEIGHTS = {
+    "irregular_floor": ((1.63, 1.46, 1.56, 1.46, 0.41, 0.49, 0.0),
+                        (1.18, 1.25, 1.14, 1.07, 0.99, 0.82, 0.54),
+                        (1.60, 1.58, 1.27, 0.96, 0.84, 0.75, 0.0),
+                        (1.76, 1.75, 1.39, 1.00, 0.76, 0.33, 0.0),
+                        (1.60, 1.57, 1.40, 1.11, 0.75, 0.40, 0.17)),
+    "rectangular_floor": ((1.20, 1.14, 1.04, 1.23, 1.22, 0.80, 0.36),
+                          (0.85, 0.69, 1.31, 1.32, 1.25, 0.87, 0.71),
+                          (1.38, 1.43, 1.28, 1.23, 0.87, 0.53, 0.26),
+                          (1.62, 1.56, 1.43, 1.16, 0.77, 0.42, 0.05),
+                          (1.62, 1.57, 1.40, 1.14, 0.84, 0.43, 0.0)),
+    "irregular_wall": ((1.25, 1.43, 1.03, 0.99, 1.06, 0.81, 0.43),
+                       (1.61, 1.59, 1.43, 1.15, 0.79, 0.42, 0.0),
+                       (1.63, 1.57, 1.40, 1.15, 0.82, 0.42, 0.0),
+                       (1.64, 1.57, 1.41, 1.15, 0.82, 0.42, 0.0),
+                       (1.64, 1.58, 1.41, 1.14, 0.81, 0.41, 0.0)),
+}
 
 
 class TMM:
@@ -881,6 +908,293 @@ class TMM:
             angle_alpha.append(np.asarray(alpha).reshape(-1))
         angle_alpha = np.column_stack(angle_alpha)
         return self._trapezoidal_integral(angle_alpha * weights[None, :], angles_rad, axis=1) / denominator
+
+    @staticmethod
+    @functools.lru_cache(maxsize=None)
+    def _unit_gauss_legendre(n):
+        """
+        Return Gauss-Legendre nodes and weights on ``[0, 1]``. Cached, since numpy builds them by an eigenvalue problem.
+        """
+        nodes, weights = np.polynomial.legendre.leggauss(n)
+        return 0.5 * (nodes + 1), 0.5 * weights
+
+    @classmethod
+    def _corner_graded_rule(cls, n, length):
+        """
+        Return a Gauss rule on ``[0, length]`` under ``u = length*t**2``, which clusters nodes at the corner ``u = 0``.
+        """
+        t, w = cls._unit_gauss_legendre(n)
+        return length * t ** 2, 2 * length * w * t
+
+    @classmethod
+    @functools.lru_cache(maxsize=16)
+    def _static_lag_integral(cls, a, b):
+        """
+        Return the integral of ``(a - u)*(b - v)/R`` over ``[0, a] x [0, b]``, with ``R = sqrt(u**2 + v**2)``.
+
+        In polar coordinates the radial integral is a polynomial, which leaves a smooth integral over the polar angle.
+        """
+        x, w = cls._unit_gauss_legendre(400)
+        total = 0.0
+        corner = np.arctan2(b, a)
+        for lower, upper in ((0.0, corner), (corner, np.pi / 2)):
+            psi = lower + (upper - lower) * x
+            c, s = np.cos(psi), np.sin(psi)
+            length = a / c if upper <= corner else b / s
+            radial = a * b * length - (a * s + b * c) * length ** 2 / 2 + c * s * length ** 3 / 3
+            total += (upper - lower) * np.sum(w * radial)
+        return total
+
+    @classmethod
+    def _thomasson_field_impedance_tensor(cls, wavenumbers, a, b, theta, phi):
+        """
+        Return ``Z_F`` with shape ``(len(wavenumbers), len(theta), len(phi))`` for every azimuth in ``phi``.
+
+        In the lag variables ``u = x0 - x`` and ``v = y0 - y`` the fourfold integral becomes
+
+        ``Z_F = 2j*k/(pi*S) * integral over [0, a] x [0, b] of (a - u)*(b - v)*exp(-1j*k*R)/R``
+        ``* cos(k*mu_x*u)*cos(k*mu_y*v)``.
+
+        A tensor Gauss rule graded toward ``u = v = 0`` evaluates it, and the direction enters only through the
+        separable cosines, so all directions follow from one matrix product per wavenumber. The quadrature of the
+        ``1/R`` part alone is replaced by its exact value, which leaves a bounded integrand for the rule.
+        """
+        theta = np.asarray(theta, dtype=float)
+        phi = np.asarray(phi, dtype=float)
+        th, ph = np.meshgrid(theta, phi, indexing="ij")
+        mu_x = (np.sin(th) * np.cos(ph)).ravel()
+        mu_y = (np.sin(th) * np.sin(ph)).ravel()
+        static = cls._static_lag_integral(float(a), float(b))
+        z_f = np.empty((len(wavenumbers), th.size), dtype=complex)
+        for index, k in enumerate(wavenumbers):
+            # About 0.4 nodes per radian of the largest phase 2*k*side, rounded up to a multiple of 32 so that only a
+            # few node sets are generated and cached.
+            u, w_u = cls._corner_graded_rule(32 * int(np.ceil((16 + 0.8 * k * a) / 32)), a)
+            v, w_v = cls._corner_graded_rule(32 * int(np.ceil((16 + 0.8 * k * b) / 32)), b)
+            distance = np.hypot(u[:, None], v[None, :])
+            weight = (w_u * (a - u))[:, None] * (w_v * (b - v))[None, :] / distance
+            cos_u = np.cos((k * mu_x)[:, None] * u[None, :])
+            cos_v = np.cos((k * mu_y)[:, None] * v[None, :])
+            real = np.einsum("dj,dj->d", cos_u @ (weight * np.cos(k * distance)), cos_v)
+            imag = np.einsum("dj,dj->d", cos_u @ (weight * np.sin(k * distance)), cos_v)
+            z_f[index] = 2j * k / (np.pi * a * b) * (real - 1j * imag - weight.sum() + static)
+        return z_f.reshape(len(wavenumbers), *th.shape)
+
+    @classmethod
+    def _thomasson_field_impedance(cls, k, a, b, theta, phi):
+        """
+        Return Thomasson's normalized field impedance ``Z_F`` of an ``a`` by ``b`` rectangle.
+
+        ``k`` is a scalar wavenumber [1/m], ``a`` and ``b`` are the sample sides [m], and ``theta`` and ``phi`` are 1-D
+        arrays [rad]. The result has shape ``(len(theta), len(phi))``.
+        """
+        return cls._thomasson_field_impedance_grid(float(a), float(b), (float(k),),
+                                                   tuple(float(t) for t in np.atleast_1d(theta)),
+                                                   tuple(float(p) for p in np.atleast_1d(phi)))[0]
+
+    @classmethod
+    @functools.lru_cache(maxsize=4)
+    def _thomasson_field_impedance_grid(cls, a, b, wavenumbers, theta, phi):
+        """
+        Return ``Z_F`` with shape ``(len(wavenumbers), len(theta), len(phi))`` for hashable tuple inputs.
+
+        ``Z_F`` depends only on the sample geometry, frequency, and direction, so results are cached for reuse across
+        absorbers evaluated on the same grids. A square gives ``Z_F(phi) = Z_F(pi/2 - phi)``, so only the distinct
+        folded azimuths are evaluated.
+        """
+        phi = np.asarray(phi, dtype=float)
+        evaluated, inverse = phi, np.arange(phi.size)
+        if a == b:
+            evaluated, inverse = np.unique(np.round(np.minimum(phi, np.pi / 2 - phi), 12), return_inverse=True)
+        grid = cls._thomasson_field_impedance_tensor(np.asarray(wavenumbers), a, b, theta, evaluated)[:, :, inverse]
+        grid.flags.writeable = False
+        return grid
+
+    @classmethod
+    @functools.lru_cache(maxsize=4)
+    def _field_impedance_on_frequency_grid(cls, a, b, wavenumbers, theta, phi):
+        """
+        Return ``Z_F`` at every wavenumber of a frequency grid, shape ``(len(wavenumbers), len(theta), len(phi))``.
+
+        ``Z_F`` varies on a wavenumber scale of ``1/max(a, b)``, so a denser grid is served by a cubic spline through
+        ``Z_F`` evaluated at that spacing. Cached, so several variants on one grid interpolate once.
+        """
+        wavenumbers = np.asarray(wavenumbers, dtype=float)
+        nodes = np.unique(np.r_[np.arange(wavenumbers.min(), wavenumbers.max(), 1 / max(a, b)), wavenumbers.max()])
+        if nodes.size >= wavenumbers.size:
+            return cls._thomasson_field_impedance_grid(a, b, tuple(wavenumbers), theta, phi)
+        grid = CubicSpline(nodes, cls._thomasson_field_impedance_grid(a, b, tuple(nodes), theta, phi), axis=0)(
+            wavenumbers)
+        grid.flags.writeable = False
+        return grid
+
+    def _angle_weights(self, angle_weights, angles):
+        """
+        Return angular weights with shape ``(len(self.freq), len(angles))`` for ``finite_sample_absorption``.
+        """
+        n_freq, n_angles = len(self.freq), len(angles)
+        if angle_weights is None:
+            return np.ones((n_freq, n_angles))
+        if isinstance(angle_weights, str):
+            if angle_weights not in JEONG_ANGLE_WEIGHTS:
+                raise ValueError(f"angle_weights preset must be one of {sorted(JEONG_ANGLE_WEIGHTS)}.")
+            table = np.asarray(JEONG_ANGLE_WEIGHTS[angle_weights])
+            rows = np.array([np.interp(angles, JEONG_WEIGHT_ANGLES, row) for row in table])
+            # Monotone cubic in log2(frequency) through the octave-band centres: PCHIP slopes at the interior centres
+            # and zero slope at 250 Hz and 4 kHz, where the weights continue as constants. The slope is continuous
+            # everywhere and the curve does not overshoot neighbouring table values.
+            nodes = np.arange(len(JEONG_WEIGHT_BANDS))
+            slopes = PchipInterpolator(nodes, rows, axis=0).derivative()(nodes)
+            slopes[[0, -1]] = 0
+            octave = np.clip(np.log2(np.asarray(self.freq) / JEONG_WEIGHT_BANDS[0]), 0, len(JEONG_WEIGHT_BANDS) - 1)
+            return CubicHermiteSpline(nodes, rows, slopes, axis=0)(octave)
+        if callable(angle_weights):
+            weights = angle_weights(np.asarray(angles)[None, :], np.asarray(self.freq)[:, None])
+        else:
+            weights = angle_weights
+        weights = np.asarray(weights, dtype=float)
+        if weights.shape not in {(n_angles,), (n_freq, n_angles)}:
+            raise ValueError(
+                f"angle_weights must have shape ({n_angles},) or ({n_freq}, {n_angles}); got {weights.shape}."
+            )
+        if np.any(~np.isfinite(weights)) or np.any(weights < 0):
+            raise ValueError("angle_weights must be finite and non-negative.")
+        return np.broadcast_to(weights, (n_freq, n_angles))
+
+    def finite_sample_absorption(self, sample_size, z_angle=None, angles=None, phi_points=16, normalization="incident",
+                                 angle_weights=None):
+        """
+        Return the statistical absorption coefficient of a finite rectangular sample in a diffuse field.
+
+        Thomasson [1] writes the pressure on a locally reacting sample of normalized impedance ``zeta`` as the incident
+        pressure times ``2*zeta/(zeta + Z_F)``, where the field impedance ``Z_F(theta, phi)`` depends on the sample
+        shape, size, frequency, and direction of incidence. For a rectangle of sides ``a`` and ``b`` and area
+        ``S = a*b``, equation 18 gives
+
+        ``Z_F = (1j*k/S) * integral over S of integral over S of G(R)*exp(-1j*k*(mu_x*(x0 - x) + mu_y*(y0 - y)))``,
+
+        with ``G(R) = exp(-1j*k*R)/(2*pi*R)``, ``mu_x = sin(theta)*cos(phi)`` and ``mu_y = sin(theta)*sin(phi)``. For an
+        infinite sample ``Z_F`` tends to ``1/cos(theta)``. The statistical absorption coefficient is equation 25,
+
+        ``alpha = (4/pi) * integral over theta and phi of Re(zeta)*sin(theta)/abs(zeta + Z_F)**2``,
+
+        with ``phi`` over ``[0, 2*pi]``. The method evaluates ``phi`` by Gauss-Legendre quadrature on ``[0, pi/2]``,
+        which covers the full range through the symmetry of the rectangle, and ``theta`` by the trapezoidal rule over
+        ``angles``. When the frequency grid is finer than a wavenumber step of ``1/max(a, b)``, ``Z_F`` is evaluated at
+        that step and interpolated with a cubic spline, since it varies on that scale. ``zeta`` is ``z_angle/z0`` at
+        each angle, so the surface impedance of a layered, non-locally reacting stack enters at its own angle. With
+        ``normalization="incident"`` the absorbed power is divided by the projected incident power of the infinite
+        sample, as above, and the edge effect can make ``alpha`` exceed 1, as in reverberation-room measurements.
+
+        The two other options divide the same absorbed power by a reference power that includes the finite size, with
+        both integrals over ``angles``. ``normalization="true"`` uses the power absorbed by a sample whose impedance is
+        the infinite-sample value ``1/cos(theta)``, Allard and Atalla [2], equation 12.41,
+
+        ``alpha = integral of 4*Re(zeta)*sin(theta)/abs(zeta + Z_F)**2``
+        ``/ integral of 4*cos(theta)*sin(theta)/abs(1 + Z_F*cos(theta))**2``.
+
+        This removes most of the edge-effect excess, but a sample that absorbs more than the ``1/cos(theta)`` reference
+        can still exceed 1. ``normalization="available"`` uses the available power of Thomasson [1], equation 28, the
+        largest power a sample can absorb, reached when ``zeta`` matches ``conj(Z_F)``, so ``1/Re(Z_F)`` replaces
+        ``cos(theta)`` in the incident power and ``alpha`` cannot exceed 1,
+
+        ``alpha = integral of 4*Re(zeta)*sin(theta)/abs(zeta + Z_F)**2 / integral of sin(theta)/Re(Z_F)``.
+
+        ``angle_weights`` accounts for the non-diffuse angular distribution of the incident intensity in a real
+        reverberation chamber, following Jeong [3], equation 8, and Jeong [4], equation 7, which multiply the ``theta``
+        integrand by a weight ``w(theta)`` normalized to a mean of 1 over 0 to 90 degrees,
+
+        ``alpha = 2 * integral of w(theta)*4*Re(zeta)*sin(theta)/abs(zeta + Z_F)**2``.
+
+        With ``"true"`` or ``"available"`` the method also weights the reference-power integral, a package extension.
+        The presets are the octave-band weights of [4], table II, which tabulates the phased beam-tracing results of
+        [3]: ``"rectangular_floor"``, the floor of a rectangular room ([3], figure 7); ``"irregular_floor"``, the floor
+        of an irregular room ([3], figure 6b); and ``"irregular_wall"``, a vertical wall of the irregular room ([3],
+        figure 4b). The names follow the figure captions of [3]; table II of [4] swaps "rectangular" and "irregular" in
+        its block labels. The method interpolates the weights in ``log2(f)`` through the octave-band centres with a
+        monotone piecewise cubic (PCHIP slopes inside, zero slope at the end bands), which keeps the slope continuous
+        without overshooting the tabulated values, and linearly in angle between the tabulated 15-degree steps;
+        frequencies below 250 Hz use the 250 Hz row as in [3], and frequencies above 4 kHz use the 4 kHz row. The
+        irregular-floor value at 4 kHz and 45 degrees is printed as 0.11 in [4] and taken as 1.11, as read from [3],
+        figure 6b.
+
+        Parameters
+        ----------
+        sample_size : float or tuple of float
+            Sample side lengths ``(a, b)`` [m]. A single value gives a square.
+        z_angle : array or None, optional
+            Angle-dependent surface impedance with one column per angle [Pa*s/m]. If ``None``, ``self.z_angle`` is used.
+        angles : array or None, optional
+            Incidence angles of the ``z_angle`` columns [deg]. If ``None``, ``self.incidence_angle`` is used. The upper
+            limit sets the integration range, for example 90 or 78 degrees.
+        phi_points : int, optional
+            Number of Gauss-Legendre points in azimuth on ``[0, pi/2]``.
+        normalization : str, optional
+            Reference power for the absorption coefficient: ``"incident"``, ``"true"``, or ``"available"``.
+        angle_weights : None, str, array, or callable, optional
+            Angular weighting of the incident intensity. ``None`` gives uniform weights. A string selects a preset:
+            ``"rectangular_floor"``, ``"irregular_floor"``, or ``"irregular_wall"``. An array has one weight per
+            angle, shape ``(len(angles),)``, or per frequency and angle, shape ``(len(freq), len(angles))``. A callable
+            ``w(theta_deg, freq)`` is evaluated on the angle [deg] and frequency [Hz] grids.
+
+        Returns
+        -------
+        array
+            Statistical absorption coefficient for each frequency.
+
+        References
+        ----------
+        [1] S.-I. Thomasson, "On the absorption coefficient", Acustica, vol. 44, pp. 265-273, 1980.
+        [2] J. F. Allard and N. Atalla, "Propagation of Sound in Porous Media: Modelling Sound Absorbing
+            Materials", 2nd ed., Wiley, 2009.
+        [3] C.-H. Jeong, "Non-uniform sound intensity distributions when measuring absorption coefficients in
+            reverberation chambers using a phased beam tracing", Journal of the Acoustical Society of America,
+            vol. 127, pp. 3560-3568, 2010.
+        [4] C.-H. Jeong, "Converting Sabine absorption coefficients to random incidence absorption coefficients",
+            Journal of the Acoustical Society of America, vol. 133, pp. 3951-3962, 2013.
+        """
+        sides = np.atleast_1d(np.asarray(sample_size, dtype=float))
+        if sides.size == 1:
+            sides = np.repeat(sides, 2)
+        if sides.size != 2 or np.any(~np.isfinite(sides)) or np.any(sides <= 0):
+            raise ValueError("sample_size must be a positive side length or a pair of positive side lengths [m].")
+        if int(phi_points) < 1:
+            raise ValueError("phi_points must be a positive integer.")
+        if normalization not in {"incident", "true", "available"}:
+            raise ValueError("normalization must be 'incident', 'true', or 'available'.")
+        if z_angle is None:
+            self._raise_if_partial_z_angle("finite_sample_absorption()")
+            z_angle = self.z_angle
+        if angles is None:
+            angles = self.incidence_angle
+        angles = np.asarray(angles, dtype=float)
+        z_angle = np.asarray(z_angle)
+        if z_angle.ndim != 2 or z_angle.shape != (len(self.freq), len(angles)) or len(angles) < 2:
+            raise ValueError(
+                f"z_angle must have one row per frequency and one column per angle, with at least two angles: got "
+                f"shape {z_angle.shape} for {len(self.freq)} frequencies and {len(angles)} angles."
+            )
+
+        a, b = sides
+        theta = np.deg2rad(angles)
+        nodes, weights = np.polynomial.legendre.leggauss(int(phi_points))
+        phi = np.pi / 4 * (nodes + 1)
+        phi_weights = weights / 2  # Mean over [0, pi/2].
+        z_f = self._field_impedance_on_frequency_grid(float(a), float(b), tuple(float(k) for k in self.w0 / self.c0),
+                                                      tuple(float(t) for t in theta), tuple(float(p) for p in phi))
+        zeta = (z_angle / self.z0)[:, :, None]
+        weighted_sin = self._angle_weights(angle_weights, angles) * np.sin(theta)[None, :]
+
+        def angular_integral(values):
+            return self._trapezoidal_integral((values @ phi_weights) * weighted_sin, theta, axis=1)
+
+        absorbed = angular_integral(4 * zeta.real / np.abs(zeta + z_f) ** 2)
+        if normalization == "incident":
+            return 2 * absorbed  # Projected incident power over the hemisphere: integral of cos*sin = 1/2.
+        if normalization == "true":
+            cos_theta = np.cos(theta)[None, :, None]
+            return absorbed / angular_integral(4 * cos_theta / np.abs(1 + z_f * cos_theta) ** 2)
+        return absorbed / angular_integral(1 / z_f.real)
 
     def equivalent_fluid_model(self, sigma, model="mac", fibre_type=1, porosity=0.95, tortuosity=1.0):
         """
@@ -3205,6 +3519,51 @@ class TMM:
         else:
             kwargs["project_folder"] = self._validate_project_folder(kwargs["project_folder"]) or os.getcwd()
         _, _, _ = plot.causality_data(self, result=result, n_oct=n_oct, **kwargs)
+        if show_fig:
+            plt.show()
+
+    def plot_finite_sample_absorption(self, sample_size=3.162, variants=None, n_oct=None, show_fig=True, **kwargs):
+        """
+        Plot the diffuse-field absorption of a finite sample computed by ``finite_sample_absorption()``.
+
+        The figure compares variants of the same angle-dependent surface impedance: normal incidence, the
+        infinite-sample Paris average, and the finite-sample coefficient with its ``normalization`` and
+        ``angle_weights`` options. The default sample
+        is a 3.162 m square, about 10 m2. The treatment must be computed with ``incidence="diffuse"``. The angular range
+        of ``incidence_angle`` sets the integration range and is printed in the title.
+
+        Parameters
+        ----------
+        sample_size : float, tuple of float, or list, optional
+            Sample side length or sides ``(a, b)`` [m]. A list of sizes draws one curve per size for a single
+            finite-sample variant.
+        variants : None, str, dict, or sequence, optional
+            Curves to draw: ``"normal"``, ``"paris"``, ``"thomasson"``, ``"true"``, ``"available"``,
+            ``"rectangular_floor"``, ``"irregular_floor"``, ``"irregular_wall"``, ``"all"``, or dicts of
+            ``finite_sample_absorption()`` options with an optional ``label``. ``None`` draws ``"paris"`` and
+            ``"thomasson"``.
+        n_oct : int or None, optional
+            Fractional-octave resolution of an added band panel, following the ``filter_alpha()`` convention.
+        show_fig : bool, optional
+            If True, display the Matplotlib figure after generating it.
+        **kwargs
+            Keyword arguments passed to ``tmm._plot.finite_sample_data``.
+
+        See Also
+        --------
+        tmm._plot.finite_sample_data
+        TMM.finite_sample_absorption
+        """
+        self._raise_if_stale_results("plot_finite_sample_absorption()")
+        if "filename" not in kwargs:
+            kwargs["filename"] = self.filename
+        else:
+            kwargs["filename"] = self._validate_filename(kwargs["filename"]) or self.filename
+        if "project_folder" not in kwargs:
+            kwargs["project_folder"] = self.project_folder
+        else:
+            kwargs["project_folder"] = self._validate_project_folder(kwargs["project_folder"]) or os.getcwd()
+        _, _, _ = plot.finite_sample_data(self, sample_size=sample_size, variants=variants, n_oct=n_oct, **kwargs)
         if show_fig:
             plt.show()
 
