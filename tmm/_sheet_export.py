@@ -41,8 +41,8 @@ def save2sheet(
     """
     Export selected TMM results to XLSX or CSV.
 
-    Implements ``TMM.save2sheet()``; see that method for the sheet layout, the CSV sidecar files and the
-    ``export_all`` diagnostic export.
+    Implements ``TMM.save2sheet()``; see that method for the sheet layout, the CSV sidecar files and the ``export_all``
+    diagnostic export.
     """
     if chart_styles is None:
         chart_styles = [35, 36]
@@ -490,10 +490,10 @@ def _has_angular_data(treatment):
 def _export_all_frame(treatment):
     """Return a diagnostic table with all angle-wise and diffuse quantities.
 
-    Treatments that never computed angle-dependent impedance, such as ``material_model()`` results and
-    objects reduced by ``reduce_size()``, fall back to the selected-method table. Building the angle-wise
-    and field-impedance columns for them would read the zero-filled ``z_angle`` fallback and write whole
-    columns of zeros and NaNs that look like computed values.
+    Treatments that never computed angle-dependent impedance, such as ``material_model()`` results and objects reduced
+    by ``reduce_size()``, fall back to the selected-method table. Building the angle-wise and field-impedance columns
+    for them would read the zero-filled ``z_angle`` fallback and write whole columns of zeros and NaNs that look like
+    computed values.
     """
     treatment._raise_if_partial_z_angle("save2sheet(export_all=True)")
     if not _has_angular_data(treatment):

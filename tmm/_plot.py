@@ -73,8 +73,8 @@ def _absorption_curve_label(tmm, compact=False):
 def _reference_angle_label(tmm, compact=False):
     """Return the reference-angle label used with diffuse plots.
 
-    The label describes the angle whose impedance is actually stored, which is not necessarily the first
-    angle of ``incidence_angle`` once ``reduced_copy()`` has trimmed the angular data.
+    The label describes the angle whose impedance is actually stored, which is not necessarily the first angle of
+    ``incidence_angle`` once ``reduced_copy()`` has trimmed the angular data.
     """
     angle = tmm.stored_angles[0]
     if np.isclose(angle, 0):
@@ -203,16 +203,15 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
     """
     Plot acoustic response data with Matplotlib.
 
-    One or more ``TMM`` objects are drawn on shared axes. A single-treatment title carries ``display_name``
-    when it is set. Multi-treatment legends prefix every entry with ``display_name``, falling back to
-    ``filename``, when ``labels="full"``. A treatment's ``color`` sets its primary curve; otherwise the first
-    color of the active Matplotlib cycle is used, and the second color draws the normal-incidence reference
-    curve shown beside a diffuse-incidence result.
+    One or more ``TMM`` objects are drawn on shared axes. A single-treatment title carries ``display_name`` when it is
+    set. Multi-treatment legends prefix every entry with ``display_name``, falling back to ``filename``, when
+    ``labels="full"``. A treatment's ``color`` sets its primary curve; otherwise the first color of the active
+    Matplotlib cycle is used, and the second color draws the normal-incidence reference curve shown beside a
+    diffuse-incidence result.
 
-    Diffuse Paris averaging is an absorption-only calculation. When the object was computed with
-    ``incidence="diffuse"`` and ``diffuse_method="paris"``, the impedance and admittance subplots are left
-    empty and annotated, because field-impedance values would not correspond to the selected diffuse
-    absorption method.
+    Diffuse Paris averaging is an absorption-only calculation. When the object was computed with ``incidence="diffuse"``
+    and ``diffuse_method="paris"``, the impedance and admittance subplots are left empty and annotated, because
+    field-impedance values would not correspond to the selected diffuse absorption method.
 
     Parameters
     ----------
@@ -228,15 +227,14 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
         Figure size.
     plots : list, optional
         List of strings with the desired plots: ``"z"`` for impedance, ``"y"`` for admittance, ``"alpha"`` for
-        absorption coefficient, and ``"scat"`` for scattering coefficient. The scattering panel draws only
-        treatments whose ``scat`` is not ``None`` and carries a note when none of them has data.
+        absorption coefficient, and ``"scat"`` for scattering coefficient. The scattering panel draws only treatments
+        whose ``scat`` is not ``None`` and carries a note when none of them has data.
     max_mode : bool, optional
         Option to identify first absorption peak if any.
     show_incidence : bool, optional
         Option to display both normal and diffuse incidence absorption curves.
     labels : bool or str, optional
-        Option to display plot labels. Use ``"full"`` to include treatment
-        names in multi-treatment legends.
+        Option to display plot labels. Use ``"full"`` to include treatment names in multi-treatment legends.
     orientation : str, optional
         Stacking orientation of the subplot: ``"vertical"`` or ``"horizontal"``.
     base_fontsize : int, optional
@@ -508,8 +506,8 @@ def causality_data(tmm, result=None, n_oct=1, fig=None, ax=None, gs=None, figsiz
     tmm : TMM
         A computed rigid-backed treatment.
     result : dict, optional
-        A ``TMM.causality_check()`` result. Passing a result keeps the figure consistent with numbers already
-        inspected. If omitted, one is computed with default options.
+        A ``TMM.causality_check()`` result. Passing a result keeps the figure consistent with numbers already inspected.
+        If omitted, one is computed with default options.
     n_oct : int, optional
         Fractional octave resolution of the band panel, following the ``TMM.filter_alpha`` convention.
     fig : Figure, optional
@@ -529,8 +527,8 @@ def causality_data(tmm, result=None, n_oct=1, fig=None, ax=None, gs=None, figsiz
     save_fig : bool, optional
         Option to save figure as static image.
     project_folder : str
-        String containing the destination folder in which the image will be saved. If not defined the current
-        active folder will be used.
+        String containing the destination folder in which the image will be saved. If not defined the current active
+        folder will be used.
     filename : str
         String that will be used as the full or partial file name.
     kwargs : keyword arguments, optional

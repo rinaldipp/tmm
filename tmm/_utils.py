@@ -67,8 +67,8 @@ class AirProperties:
         """
         Return the air properties derived from temperature, humidity and pressure.
 
-        The dictionary holds the density, speed of sound, viscosity, Prandtl number, specific heat ratio,
-        thermal conductivity and constant-pressure specific heat, plus the three inputs.
+        The dictionary holds the density, speed of sound, viscosity, Prandtl number, specific heat ratio, thermal
+        conductivity and constant-pressure specific heat, plus the three inputs.
         """
         # Constants
         r = 287.031  # Gas constant for air [J/K/kg]
