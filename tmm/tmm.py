@@ -21,7 +21,7 @@ import warnings
 import numpy as np
 import pandas
 from matplotlib import pyplot as plt
-from scipy import integrate
+from scipy import integrate, special
 from scipy.interpolate import CubicHermiteSpline, CubicSpline, PchipInterpolator
 from scipy.signal import butter, freqz, savgol_filter
 from scipy.special import jv
@@ -42,6 +42,135 @@ MAX_GRID_DECIMALS = 12
 # (the width index is summed in closed form), and the Ingard end-correction sum over indices 0 to this value.
 RECT_SLOT_DENSITY_TERMS = 1000
 RECT_SLOT_END_CORRECTION_TERMS = 180
+
+# Equivalent-fluid models built from the Johnson et al. dynamic tortuosity, and the frame options of porous_layer.
+JCA_MODELS = ("jca", "jcal", "jcapl")
+POROUS_FRAMES = ("rigid", "limp")
+# Material parameter sets for porous_layer(preset=...), from Allard and Atalla (2009) and Olny and Panneton (2008).
+# Names are the material and its flow resistivity in kPa*s/m². Units as in porous_layer: sigma [kPa*s/m²], lengths
+# [µm], thermal_permeability [m²], bulk_density [kg/m³]. "source" names the table and printed page; "description" says
+# how the source uses the material; "model" is the model porous_layer uses when the call gives none, "jcal" for the
+# sets that include a thermal permeability. TMM.porous_presets() lists them.
+def _preset(sigma, porosity, tortuosity, viscous_length, thermal_length, bulk_density, source, description,
+            thermal_permeability=None, model="jca"):
+    return dict(model=model, sigma=sigma, porosity=porosity, tortuosity=tortuosity, viscous_length=viscous_length,
+                thermal_length=thermal_length, bulk_density=bulk_density, thermal_permeability=thermal_permeability,
+                source=source, description=description)
+
+
+POROUS_PRESETS = {
+    "foam_2.3k": _preset(
+        2.3, 0.960, 1.28, 202.0, 376.0, 60.0, "Olny and Panneton (2008), Table I, p. 817, and Table II, p. 819",
+        "Polyurethane foam characterized in an impedance tube (12.7 mm sample). Viscous parameters by the "
+        "inversion method of Panneton and Olny (2006), thermal parameters by fitting the Lafarge et al. model; "
+        "thermal permeability ±23%, thermal length ±7%.", thermal_permeability=167e-10, model="jcal"),
+    "carpet_5k": _preset(
+        5.0, 0.99, 1.0, 23.0, 28.0, 60.0, "Table 11.7, p. 274",
+        "Carpet of a layered system (carpet, impervious screen, fibrous layer) bonded onto a rigid wall (Figure "
+        "11.16; measurements of Brouard et al. 1994). The book models the 3.5 mm carpet as two porous layers, since "
+        "its fibre bundles are fixed to an impervious backing at the lower face, and Table 11.7 gives both the same "
+        "values."),
+    "foam_5k": _preset(
+        5.0, 0.98, 1.1, 150.0, 216.0, 33.0, "Table 11.3, p. 266",
+        "Plastic foam covered by a sheet of glass wool, bonded onto a rigid wall (Figure 11.6)."),
+    "foam_6.6k": _preset(
+        6.6, 0.98, 1.03, 200.0, 380.0, 11.2, "Table 11.9, p. 276",
+        "Foam bonded onto a 0.6 mm aluminium plate for diffuse-field transmission loss."),
+    "foam_10.9k": _preset(
+        10.9, 0.99, 1.02, 100.0, 130.0, 8.8, "Table 11.5, layer 3, p. 271 (also Tables 12.1, 12.4, 12.5)",
+        "Foam of the felt-screen-foam system, modelled as limp; the same foam is the limp foam of the plate-foam "
+        "systems in chapter 12."),
+    "foam_12.6k": _preset(
+        12.569, 0.99, 1.02, 78.0, 192.0, 8.85, "Table 13.1, p. 328",
+        "Foam sample of 0.5 m x 0.5 m x 5.08 cm on a rigid wall, used for the finite-size finite-element example."),
+    "foam_22k": _preset(
+        22.0, 0.98, 1.9, 87.0, 146.0, 30.0, "Table 11.6, p. 273",
+        "Plastic foam surfaced with an impervious screen, bonded onto a rigid wall (Figure 11.14)."),
+    "foam_22.1k": _preset(
+        22.1, 0.97, 2.2, 39.0, 275.0, 24.5, "Table 8.1, material 2, p. 174",
+        "Material 2 of the chapter 8 surface-wave and layer-mode examples, a 2 cm layer. The book does not name "
+        "the material type."),
+    "felt_23k": _preset(
+        23.0, 0.99, 1.4, 64.0, 131.0, 66.0, "Table 11.5, layer 1, p. 271",
+        "Felt of a felt-screen-foam system on a rigid wall, modelled as a limp porous material."),
+    "glass_wool_24.3k": _preset(
+        24.3, 0.988, 1.01, 63.0, 137.0, 53.0, "Olny and Panneton (2008), Table I, p. 817, and Table II, p. 819",
+        "Glass wool characterized in an impedance tube (12.0 mm sample, frame held with pins). Viscous parameters "
+        "by the inversion method of Panneton and Olny (2006), thermal parameters by fitting the Lafarge et al. "
+        "model; thermal permeability ±10%, thermal length ±6%.", thermal_permeability=31e-10, model="jcal"),
+    "soft_fibrous_25k": _preset(
+        25.0, 0.98, 1.02, 90.0, 180.0, 30.0, "Table 11.2, p. 254",
+        "Soft fibrous material used to compare the rigid and limp frame effective densities (Figure 11.2), "
+        "measured by Panneton (2007)."),
+    "fibrous_layer_33k": _preset(
+        33.0, 0.98, 1.1, 50.0, 110.0, 60.0, "Table 11.7, p. 274",
+        "Fibrous layer behind the impervious screen of a layered system (carpet, impervious screen, fibrous layer) "
+        "bonded onto a rigid wall (Figure 11.16)."),
+    "fibrous_blanket_34k": _preset(
+        34.0, 0.98, 1.18, 60.0, 86.0, 41.0, "Table 11.4, layer 1, p. 270",
+        "Blanket facing a resistive screen and two foams, the layered material bonded onto a rigid wall "
+        "(Figure 11.10)."),
+    "mineral_wool_34k": _preset(
+        34.0, 0.95, 1.0, 40.0, 80.0, 90.0, "Table 12.2, p. 293",
+        "Mineral wool between a steel plate and a laminated plate in a double wall (Villot et al. 2001)."),
+    "glass_wool_40k": _preset(
+        40.0, 0.94, 1.06, 56.0, 110.0, 130.0, "Table 11.8, p. 275 (also Table 6.1, p. 124)",
+        "Glass wool 'Domisol Coffrage', manufactured by Saint-Gobain Isover (section 6.5.4). Anisotropic; these are "
+        "its normal-incidence parameters, used for a glass wool bonded onto a 1 mm aluminium plate."),
+    "foam_50k": _preset(
+        50.0, 0.98, 1.4, 50.0, 150.0, 25.0, "Table 8.1, material 1, p. 174",
+        "Material 1 of the chapter 8 Rayleigh-wave predictions. The book does not name the material type; the "
+        "surface-wave measurements of that chapter are on open-cell foam."),
+    "rock_wool_51.2k": _preset(
+        51.2, 0.970, 1.06, 41.0, 59.0, 183.0, "Olny and Panneton (2008), Table I, p. 817, and Table II, p. 819",
+        "Rock wool characterized in an impedance tube (11.0 mm sample, frame held with pins). Viscous parameters "
+        "by the inversion method of Panneton and Olny (2006), thermal parameters by fitting the Lafarge et al. "
+        "model; thermal permeability ±8%, thermal length ±14%. Thermal shape factor 2.84, far from the JCA value "
+        "of 1.",
+        thermal_permeability=12e-10, model="jcal"),
+    "foam_65k": _preset(
+        65.0, 0.99, 1.98, 37.0, 120.0, 16.0, "Table 11.4, layer 4, p. 270",
+        "Foam against the rigid wall in the blanket-screen-foam layered material (Figure 11.10)."),
+    "foam_87k": _preset(
+        87.0, 0.97, 2.52, 36.0, 118.0, 31.0, "Table 11.4, layer 3, p. 270",
+        "Foam behind the resistive screen in the blanket-screen-foam layered material (Figure 11.10)."),
+    "rock_wool_135k": _preset(
+        135.0, 0.94, 2.1, 49.0, 166.0, 130.0, "Table 13.2, p. 337; Sgard et al. (2005), Table 1",
+        "Rockwool characterized for perforated (double porosity) rockwool samples (Atalla et al. 2001). Includes "
+        "the static thermal permeability.", thermal_permeability=3.3e-9, model="jcal"),
+}
+PRESET_PARAMETERS = ("sigma", "porosity", "tortuosity", "viscous_length", "thermal_length", "thermal_permeability",
+                     "bulk_density")
+
+
+class _FullTextFrame(pandas.DataFrame):
+    """DataFrame that shows text columns in full when displayed, without changing the global pandas options."""
+
+    @property
+    def _constructor(self):
+        return _FullTextFrame
+
+    def _repr_html_(self):
+        with pandas.option_context("display.max_colwidth", None):
+            return super()._repr_html_()
+
+    def __repr__(self):
+        with pandas.option_context("display.max_colwidth", None):
+            return super().__repr__()
+
+
+# porous_layer arguments that log_rebuild writes when set, paired with their self.matrix record keys.
+POROUS_LOG_KEYS = (
+    ("viscous_length", "viscous_length [µm]"),
+    ("thermal_length", "thermal_length [µm]"),
+    ("thermal_permeability", "thermal_permeability [m²]"),
+    ("static_tortuosity", "static_tortuosity"),
+    ("static_thermal_tortuosity", "static_thermal_tortuosity"),
+    ("bulk_density", "bulk_density [kg/m³]"),
+    ("pore_shape_factor", "pore_shape_factor"),
+    ("perforation_diameter", "perforation_diameter [mm]"),
+    ("perforation_spacing", "perforation_spacing [mm]"),
+)
 
 # Angular intensity weightings w(theta) of Jeong (2013), Table II, tabulated from the phased beam-tracing results of
 # Jeong (2010). Rows are the 250 Hz to 4 kHz octave bands, columns 0 to 90 degrees in 15-degree steps. Keys follow the
@@ -1196,7 +1325,28 @@ class TMM:
             return absorbed / angular_integral(4 * cos_theta / np.abs(1 + z_f * cos_theta) ** 2)
         return absorbed / angular_integral(1 / z_f.real)
 
-    def equivalent_fluid_model(self, sigma, model="mac", fibre_type=1, porosity=0.95, tortuosity=1.0):
+    @staticmethod
+    def porous_presets():
+        """
+        Return the ``porous_layer(preset=...)`` parameter sets as a table.
+
+        Each row holds the parameters in ``porous_layer()`` units, the table and printed page of Allard and Atalla
+        (2009) or Olny and Panneton (2008) the values come from, and the source's description of the material and how
+        it is used there.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per preset, indexed by preset name. The table displays its ``source`` and ``description``
+            columns in full; the global pandas display options are left unchanged.
+        """
+        return _FullTextFrame.from_dict(POROUS_PRESETS, orient="index").rename_axis("preset")
+
+    def equivalent_fluid_model(self, sigma, model="mac", fibre_type=1, porosity=0.95, tortuosity=1.0,
+                               viscous_length=None, thermal_length=None, thermal_permeability=None,
+                               static_tortuosity=None, static_thermal_tortuosity=None, frame="rigid",
+                               bulk_density=None, pore_shape_factor=None, perforation_diameter=None,
+                               perforation_spacing=None, thickness=None, rigid_backed=True):
         """
         Return the complex propagation constant ``kc`` and characteristic impedance ``zc`` for an equivalent-fluid
         porous material.
@@ -1217,10 +1367,72 @@ class TMM:
         ``tortuosity`` mapped as described under Parameters. ``wilson_db`` keeps the compact Wilson relaxation model
         from the MATLAB reference script accompanying [1].
 
-        Use ``mechel_1976`` when open porosity is part of the material definition and ``wilson_2015`` when porosity and
-        tortuosity are known. Use ``qunli`` for porous plastics and open foams within the COMSOL-listed range of
-        approximately 200-2000 Hz and ``3e3 <= sigma <= 24e3`` Pa*s/m2, and ``mac`` for the Modified Champoux-Allard
-        coefficient set within its listed range of approximately 45-11000 Hz.
+        ``jca``, ``jcal`` and ``jcapl`` follow the summary of Allard and Atalla [5], section 5.8. The effective density
+        is ``rho = rho0*alpha/phi`` with ``alpha = alpha_inf + nu*phi/(j*omega*q0)*G``, ``q0 = eta/sigma`` and
+        ``nu = eta/rho0`` (equations 5.50 and 5.58). The bulk modulus is
+        ``K = gamma*P0/(gamma - (gamma - 1)/alpha')/phi`` with ``alpha' = 1 + nu'*phi/(j*omega*q0')*G'`` and
+        ``nu' = nu/Pr`` (equations 5.51-5.52 and 5.59). All three use
+        ``G = 1 - b + b*sqrt(1 + (2*alpha_inf*q0/(phi*Lambda*b))**2*j*omega/nu)`` and
+        ``G' = 1 - b' + b'*sqrt(1 + (2*q0'/(phi*Lambda'*b'))**2*j*omega/nu')`` (equations 5.53 and 5.56-5.57).
+        ``jca`` (Johnson-Champoux-Allard) sets ``b = b' = 1`` and ``q0' = phi*Lambda'**2/8`` (equation 5.54).
+        ``jcal`` (Lafarge et al. [9]) takes ``q0'`` as ``thermal_permeability`` with ``b = b' = 1``. ``jcapl``
+        (Pride-Lafarge) sets ``b = 2*alpha_inf**2*q0/(phi*Lambda**2*(alpha_0 - alpha_inf))`` from the static
+        tortuosity ``alpha_0`` (equation 5.33) and ``b' = 2*q0'/(phi*Lambda'**2*(alpha_0' - 1))``, its thermal
+        homologue with ``alpha_inf = 1``. Then ``kc = omega*sqrt(rho/K)`` and ``Zc = sqrt(rho*K)``.
+
+        ``frame`` sets how the solid frame moves. All models describe only the compression wave in the pore air; the
+        frame-borne waves of Biot theory, and with them frame resonances, are outside the package. With
+        ``frame="rigid"`` (the default, and the form every model above is written in) the frame does not move at
+        all [6], section 2.2. This holds when the frame is held in place and stiff, heavy, or weakly coupled to the
+        air. It also excludes rigid-body motion, so a light layer that is free to move is misrepresented, mostly at
+        low frequency, where the rigid density grows without bound as ``sigma/(j*omega)`` ([5], equation 5.37).
+
+        With ``frame="limp"`` the frame has no stiffness and is carried by the pore air, so its inertia joins the
+        fluid's ([6], section 2.3). The bulk modulus is unchanged and the density is replaced by Panneton's
+        equation 7, ``rho_limp = (M*rho - rho0**2)/(M + rho - 2*rho0)`` with ``M = rho1 + phi*rho0``, where
+        ``rho1`` is ``bulk_density`` and ``rho = Zc*kc/omega`` is the rigid-frame density of the selected model
+        (``K = Zc*omega/kc`` is kept). As ``rho1`` grows the rigid result returns. At low frequency ``rho_limp``
+        tends to ``M`` instead of diverging, so a light frame moves with the air and loses less to viscosity; the
+        two frames differ mainly at low frequency ([5], section 11.3.4). The limp form fits soft, light frames
+        (light fibreglass, thin light foams), unbonded or free-hanging layers, and transmission through porous
+        layers; [5] places the limit at a frame bulk modulus below about 20 kPa, mounting aside. Every model accepts
+        it; for the empirical ones ``phi`` is ``porosity``, which then enters only through ``M``.
+        ``double_porosity`` takes ``frame="rigid"`` only.
+
+        ``attenborough`` follows Attenborough [7], equations 8-10, with ``tortuosity`` as his ``q**2`` and
+        ``pore_shape_factor`` as ``s_f``: ``kc/k0 = q*sqrt(A*B)`` and ``Zc/Z0 = q**2*A/(phi*kc/k0)``, where
+        ``A = 1/(1 - 2*T(x)/x)``, ``B = 1 + 2*(gamma - 1)*T(sqrt(Pr)*x)/(sqrt(Pr)*x)``, ``T = J1/J0``,
+        ``x = lambda*sqrt(-j)`` and ``lambda = sqrt(8*rho0*q**2*omega/(sigma*phi))/s_f``. The source writes these
+        for ``exp(-i*omega*t)``; ``sqrt(-j)`` gives the package's ``exp(j*omega*t)`` form. ``Pr`` is the air Prandtl
+        number of the object, which the source leaves unspecified. The source bounds ``s_f`` between 0.6 (slit pores)
+        and 1 (circular pores).
+
+        ``double_porosity`` follows the analytical model of Sgard et al. [8], equations 1-17, for a JCAL microporous
+        medium with straight circular meso-perforations of radius ``R`` on a square cell of side ``Lc``, so
+        ``phi_p = pi*R**2/Lc**2``. The micropore permeability is ``eta/(j*omega*rho_m)`` from the ``jcal`` density;
+        the perforation permeability and bulk modulus use the Zwikker-Kosten circular-duct functions (equations 6, 9
+        and 11). Then ``rho_dp = eta/(j*omega*((1 - phi_p)*Pi_m + Pi_p))`` and
+        ``K_dp = 1/(1/K_p + (1 - phi_p)*F_d(omega*P0/(phi*K_m))/K_m)`` (equations 2, 5 and 8), with the
+        pressure-diffusion function of equations 12-16. The diffusion length is the finite-thickness form of
+        equation 17, ``Lambda_d = 2*(Lc**2 - pi*R**2)*t/(2*pi*R*t + n*(Lc**2 - pi*R**2))``, with ``n = 1`` when the
+        layer lies on the rigid wall and ``n = 2`` otherwise (section 2.4). ``compute()`` sets ``rigid_backed`` from
+        the final stack. The model assumes a rigid skeleton and perforations far larger than the micropores. Its
+        absorption gain needs a high permeability contrast ([8], section 3.1): the diffusion frequency
+        ``omega_d = (1 - phi_p)*P0/(phi*sigma*D(0))`` must lie well below the micropores' viscous characteristic
+        frequency ``sigma*phi/(rho0*alpha_inf)`` (equations 15 and 25-27), and the gain appears around ``omega_d``.
+        A low ``omega_d`` calls for a porous, highly resistive, weakly tortuous material with large holes at a low
+        perforation ratio; when the condition fails, perforating can lower the absorption.
+
+        The model follows from the parameters known for the material. With ``sigma`` only, use the empirical sets:
+        ``qunli`` for porous plastics and open foams within the COMSOL-listed range of approximately 200-2000 Hz and
+        ``3e3 <= sigma <= 24e3`` Pa*s/m2, and ``mac`` for the Modified Champoux-Allard set within its listed range of
+        approximately 45-11000 Hz. Use ``mechel_1976`` when open porosity is also known and ``wilson_2015`` when
+        porosity and tortuosity are. ``jca`` needs both characteristic lengths, ``jcal`` adds the static thermal
+        permeability and ``jcapl`` the two static tortuosities; ``porous_layer(preset=...)`` supplies measured sets.
+        ``attenborough`` describes soils, sands and other granular media through the pore shape factor [7].
+        ``double_porosity`` applies to a porous panel perforated with holes much larger than its pores, typically a
+        dense, highly resistive material [8].
+        ``frame`` is chosen separately from the model, as described above.
 
         Parameters
         ----------
@@ -1232,11 +1444,38 @@ class TMM:
         fibre_type : int, optional
             Fibre type for ``mechel_grundmann``. ``1`` is basalt/rock wool and ``2`` is glass fibre.
         porosity : float, optional
-            Open pore volume fraction for branches that expose porosity. Used by ``mechel_1976``, ``wilson_2015``, and
-            ``wilson_db``.
+            Open pore volume fraction for branches that expose porosity. Used by ``mechel_1976``, ``wilson_2015``,
+            ``wilson_db``, ``jca``, ``jcal``, ``jcapl``, ``attenborough``, ``double_porosity`` and ``frame="limp"``.
         tortuosity : float, optional
-            High-frequency tortuosity-like factor for ``model="wilson_2015"``. Wilson's internal ``q`` parameter is
+            High-frequency tortuosity ``alpha_inf``. Used by ``jca``, ``jcal``, ``jcapl``, ``double_porosity``,
+            ``attenborough`` (as ``q**2``) and ``model="wilson_2015"``, where Wilson's internal ``q`` parameter is
             computed as ``sqrt(tortuosity)``.
+        viscous_length : float, optional
+            Viscous characteristic length ``Lambda`` for ``jca``, ``jcal``, ``jcapl`` and ``double_porosity`` [m].
+        thermal_length : float, optional
+            Thermal characteristic length ``Lambda'`` for ``jca``, ``jcal``, ``jcapl`` and ``double_porosity`` [m].
+        thermal_permeability : float, optional
+            Static thermal permeability ``q0'`` for ``jcal``, ``jcapl`` and ``double_porosity`` [m²].
+        static_tortuosity : float, optional
+            Static viscous tortuosity ``alpha_0`` for ``jcapl``. Must exceed ``tortuosity``.
+        static_thermal_tortuosity : float, optional
+            Static thermal tortuosity ``alpha_0'`` for ``jcapl``. Must exceed one.
+        frame : str, optional
+            ``"rigid"`` (default): the frame stays still. ``"limp"``: the frame has no stiffness and moves with the
+            pore air, adding its mass through ``bulk_density``. See the frame paragraphs above.
+        bulk_density : float, optional
+            In-vacuo bulk density of the frame, the mass of solid per unit volume of material, for ``frame="limp"``
+            [kg/m³].
+        pore_shape_factor : float, optional
+            Pore shape factor ratio ``s_f`` for ``model="attenborough"``.
+        perforation_diameter, perforation_spacing : float, optional
+            Diameter of the circular meso-perforations and side of their square cell for
+            ``model="double_porosity"`` [m].
+        thickness : float, optional
+            Layer thickness for ``model="double_porosity"`` [m].
+        rigid_backed : bool, optional
+            ``True`` when the double-porosity layer lies on a rigid wall, ``False`` when air or another layer
+            follows it.
 
         Returns
         -------
@@ -1253,7 +1492,20 @@ class TMM:
             vol. 35, pp. 210-213, 1976.
         [4] D. K. Wilson, "General models for acoustical properties of porous media, and reduction to simpler
             models", Proceedings of Inter-Noise 2015, San Francisco, 2015.
+        [5] J. F. Allard and N. Atalla, "Propagation of Sound in Porous Media: Modelling Sound Absorbing
+            Materials", 2nd ed., Wiley, 2009, chapter 5.
+        [6] R. Panneton, "Comments on the limp frame equivalent fluid model for porous media", Journal of the
+            Acoustical Society of America, vol. 122, pp. EL217-EL222, 2007.
+        [7] K. Attenborough, "Acoustical impedance models for outdoor ground surfaces", Journal of Sound and
+            Vibration, vol. 99, pp. 521-544, 1985.
+        [8] F. C. Sgard, X. Olny, N. Atalla and F. Castel, "On the use of perforations to improve the sound
+            absorption of porous materials", Applied Acoustics, vol. 66, pp. 625-651, 2005.
+        [9] D. Lafarge, P. Lemarinier, J. F. Allard and V. Tarnow, "Dynamic compressibility of air in porous
+            structures at audible frequencies", Journal of the Acoustical Society of America, vol. 102,
+            pp. 1995-2006, 1997.
         """
+        if frame not in POROUS_FRAMES:
+            raise ValueError(f"frame must be one of {POROUS_FRAMES}.")
         coefficients = {  # List of coefficients for each available model
             "db": [0.0978, 0.7, 0.189, 0.595, 0.0571, 0.754, 0.087, 0.732],  # Delaney-Bazley
             "miki": [0.122, 0.618, 0.18, 0.618, 0.079, 0.632, 0.12, 0.632],  # Miki
@@ -1402,6 +1654,17 @@ class TMM:
                                   betak[4] * X + betak[5] * X ** 1.5)
             zc = self.z0 * (betaz[0] * X ** -1 + betaz[1] * X ** -0.5 + betaz[2] + betaz[3] * X ** 0.5 +
                             betaz[4] * X + betaz[5] * X ** 1.5)
+        elif model in JCA_MODELS:
+            kc, zc = self._jca_equivalent_fluid(sigma, model, porosity, tortuosity, viscous_length, thermal_length,
+                                                thermal_permeability, static_tortuosity, static_thermal_tortuosity)
+        elif model == "attenborough":
+            kc, zc = self._attenborough(sigma, porosity, tortuosity, pore_shape_factor)
+        elif model == "double_porosity":
+            if frame != "rigid":
+                raise ValueError("model='double_porosity' supports frame='rigid' only.")
+            kc, zc = self._double_porosity(sigma, porosity, tortuosity, viscous_length, thermal_length,
+                                           thermal_permeability, perforation_diameter, perforation_spacing,
+                                           thickness, rigid_backed)
         else:
             available_models = [key for key in coefficients.keys()]
             available_models.append("komatsu")
@@ -1409,48 +1672,315 @@ class TMM:
             available_models.append("wilson_2015")
             available_models.append("wilson_db")
             available_models.append("mechel_grundmann")
+            available_models.extend(JCA_MODELS)
+            available_models.extend(["attenborough", "double_porosity"])
             raise NameError("Unidentified model. Choose between the available models: ", available_models)
+
+        if frame == "limp":
+            kc, zc = self._limp_frame(kc, zc, porosity, bulk_density)
 
         return kc, zc
 
-    def porous_layer(self, sigma=27, t=5, model="mac", fibre_type=1, porosity=0.95, tortuosity=1.0, layer=None):
+    def _jca_equivalent_fluid(self, sigma, model, porosity, tortuosity, viscous_length, thermal_length,
+                              thermal_permeability=None, static_tortuosity=None, static_thermal_tortuosity=None):
+        """Return ``kc, zc`` of the JCA, JCAL or JCAPL rigid-frame equivalent fluid, with lengths in [m]."""
+        rho_eq, bulk_eq = self._jca_density_bulk(sigma, model, porosity, tortuosity, viscous_length, thermal_length,
+                                                 thermal_permeability, static_tortuosity, static_thermal_tortuosity)
+        return self.w0 * np.sqrt(rho_eq / bulk_eq), np.sqrt(rho_eq * bulk_eq)
+
+    def _jca_density_bulk(self, sigma, model, porosity, tortuosity, viscous_length, thermal_length,
+                          thermal_permeability=None, static_tortuosity=None, static_thermal_tortuosity=None):
+        """Return the equivalent density and bulk modulus of the JCA, JCAL or JCAPL fluid, with lengths in [m]."""
+        required = {"viscous_length": viscous_length, "thermal_length": thermal_length}
+        if model in ("jcal", "jcapl"):
+            required["thermal_permeability"] = thermal_permeability
+        if model == "jcapl":
+            required["static_tortuosity"] = static_tortuosity
+            required["static_thermal_tortuosity"] = static_thermal_tortuosity
+        missing = [name for name, value in required.items() if value is None]
+        if missing:
+            raise ValueError(f"model='{model}' needs {', '.join(missing)}.")
+        if not 0 < porosity <= 1:
+            raise ValueError("porosity must be greater than zero and less than or equal to one.")
+        if tortuosity < 1:
+            raise ValueError("tortuosity must be at least one.")
+        if sigma <= 0 or viscous_length <= 0 or thermal_length <= 0:
+            raise ValueError("sigma, viscous_length and thermal_length must be greater than zero.")
+
+        eta = self.air_prop["air_viscosity"]
+        gamma = self.air_prop["specific_heat_ratio"]
+        nu = eta / self.rho0
+        nu_thermal = nu / self.air_prop["prandtl_number"]
+        p0 = self.air_prop["atmospheric_pressure"]
+        omega = self.w0
+
+        q0 = eta / sigma
+        if model == "jca":
+            q0_thermal = porosity * thermal_length ** 2 / 8
+        else:
+            if thermal_permeability <= 0:
+                raise ValueError("thermal_permeability must be greater than zero.")
+            q0_thermal = thermal_permeability
+
+        if model == "jcapl":
+            if static_tortuosity <= tortuosity or static_thermal_tortuosity <= 1:
+                raise ValueError("static_tortuosity must exceed tortuosity and static_thermal_tortuosity must "
+                                 "exceed one.")
+            b = 2 * tortuosity ** 2 * q0 / (porosity * viscous_length ** 2 * (static_tortuosity - tortuosity))
+            b_thermal = 2 * q0_thermal / (porosity * thermal_length ** 2 * (static_thermal_tortuosity - 1))
+        else:
+            b = b_thermal = 1.0
+
+        g = 1 - b + b * np.sqrt(1 + (2 * tortuosity * q0 / (porosity * viscous_length * b)) ** 2 * 1j * omega / nu)
+        g_thermal = 1 - b_thermal + b_thermal * np.sqrt(
+            1 + (2 * q0_thermal / (porosity * thermal_length * b_thermal)) ** 2 * 1j * omega / nu_thermal)
+        alpha = tortuosity + nu * porosity / (1j * omega * q0) * g
+        alpha_thermal = 1 + nu_thermal * porosity / (1j * omega * q0_thermal) * g_thermal
+
+        rho_eq = self.rho0 * alpha / porosity
+        bulk_eq = gamma * p0 / (gamma - (gamma - 1) / alpha_thermal) / porosity
+        return rho_eq, bulk_eq
+
+    @staticmethod
+    def _bessel_ratio_term(x):
+        """Return ``2*J1(x)/(x*J0(x))``; scaled Bessel functions keep the ratio finite at large ``|x|``."""
+        return 2 * special.jve(1, x) / (x * special.jve(0, x))
+
+    def _attenborough(self, sigma, porosity, tortuosity, pore_shape_factor):
+        """Return ``kc, zc`` of Attenborough's four-parameter rigid-porous model."""
+        if pore_shape_factor is None:
+            raise ValueError("model='attenborough' needs pore_shape_factor.")
+        if not 0 < porosity <= 1:
+            raise ValueError("porosity must be greater than zero and less than or equal to one.")
+        if sigma <= 0 or tortuosity < 1 or pore_shape_factor <= 0:
+            raise ValueError("sigma and pore_shape_factor must be greater than zero and tortuosity at least one.")
+        gamma = self.air_prop["specific_heat_ratio"]
+        root_prandtl = np.sqrt(self.air_prop["prandtl_number"])
+        lam = np.sqrt(8 * self.rho0 * tortuosity * self.w0 / (sigma * porosity)) / pore_shape_factor
+        x = lam * np.sqrt(-1j)
+        viscous = 1 / (1 - self._bessel_ratio_term(x))
+        thermal = 1 + (gamma - 1) * self._bessel_ratio_term(root_prandtl * x)
+        kc_norm = np.sqrt(tortuosity * viscous * thermal)
+        return self.k0 * kc_norm, self.z0 * tortuosity * viscous / (porosity * kc_norm)
+
+    def _double_porosity(self, sigma, porosity, tortuosity, viscous_length, thermal_length, thermal_permeability,
+                         perforation_diameter, perforation_spacing, thickness, rigid_backed):
+        """Return ``kc, zc`` of a JCAL microporous medium with circular meso-perforations, lengths in [m]."""
+        required = {"thermal_permeability": thermal_permeability, "perforation_diameter": perforation_diameter,
+                    "perforation_spacing": perforation_spacing, "thickness": thickness}
+        missing = [name for name, value in required.items() if value is None]
+        if missing:
+            raise ValueError(f"model='double_porosity' needs {', '.join(missing)}.")
+        if thickness <= 0 or perforation_spacing <= 0:
+            raise ValueError("thickness and perforation_spacing must be greater than zero.")
+        radius = perforation_diameter / 2
+        cell_area = perforation_spacing ** 2
+        phi_p = np.pi * radius ** 2 / cell_area
+        if not 0 < phi_p < 1:
+            raise ValueError("perforation_diameter must be positive and leave material between the perforations.")
+        rho_m, bulk_m = self._jca_density_bulk(sigma, "jcal", porosity, tortuosity, viscous_length, thermal_length,
+                                               thermal_permeability)
+        eta = self.air_prop["air_viscosity"]
+        gamma = self.air_prop["specific_heat_ratio"]
+        p0 = self.air_prop["atmospheric_pressure"]
+        omega = self.w0
+
+        # Perforations: Zwikker-Kosten viscous and thermal permeabilities of a circular duct.
+        delta_v2 = eta / (self.rho0 * omega)
+        delta_t2 = self.air_prop["air_thermal_conductivity"] / (
+            self.rho0 * self.air_prop["constant_pressure_specific_heat"] * omega)
+        perm_p = phi_p / 1j * delta_v2 * (1 - self._bessel_ratio_term(radius / np.sqrt(delta_v2) * np.sqrt(-1j)))
+        thermal_p = phi_p / 1j * delta_t2 * (1 - self._bessel_ratio_term(radius / np.sqrt(delta_t2) * np.sqrt(-1j)))
+        bulk_p = gamma * p0 / phi_p / (gamma - 1j * (gamma - 1) * thermal_p / (delta_t2 * phi_p))
+
+        # Micropores: dynamic viscous permeability from the JCAL density.
+        perm_m = eta / (1j * omega * rho_m)
+        rho_dp = eta / (1j * omega * ((1 - phi_p) * perm_m + perm_p))
+
+        # Pressure diffusion between perforations and micropores.
+        d0 = cell_area / (4 * np.pi) * (np.log(1 / phi_p) - 1.5 + 2 * phi_p - phi_p ** 2 / 2)
+        omega_d = (1 - phi_p) * p0 / (porosity * sigma * d0)
+        solid = cell_area - np.pi * radius ** 2
+        faces = solid if rigid_backed else 2 * solid
+        length_d = 2 * solid * thickness / (2 * np.pi * radius * thickness + faces)
+        m_d = 8 * d0 / (length_d ** 2 * (1 - phi_p))
+        x = omega * p0 / (porosity * bulk_m) / omega_d
+        f_d = 1 - 1j * x / (1j * x + np.sqrt(1 + 1j * m_d / 2 * x))
+        bulk_dp = 1 / (1 / bulk_p + (1 - phi_p) * f_d / bulk_m)
+        return omega * np.sqrt(rho_dp / bulk_dp), np.sqrt(rho_dp * bulk_dp)
+
+    def _rigid_backed(self, layer):
+        """Return whether ``layer`` is the last layer of a stack computed on a rigid backing."""
+        keys = [key for key in self.matrix if isinstance(key, (int, np.integer))]
+        is_last = not keys or layer >= max(keys)
+        return bool(is_last and getattr(self, "_build_backing", "rigid") == "rigid")
+
+    def _limp_frame(self, kc, zc, porosity, bulk_density):
+        """Replace the effective density in ``kc, zc`` by Panneton's limp-frame density."""
+        if bulk_density is None or bulk_density <= 0:
+            raise ValueError("frame='limp' needs a positive bulk_density.")
+        if not 0 < porosity <= 1:
+            raise ValueError("porosity must be greater than zero and less than or equal to one.")
+        omega = self.w0
+        rho_eq = zc * kc / omega
+        bulk_eq = zc * omega / kc
+        total_density = bulk_density + porosity * self.rho0
+        rho_limp = (total_density * rho_eq - self.rho0 ** 2) / (total_density + rho_eq - 2 * self.rho0)
+        return omega * np.sqrt(rho_limp / bulk_eq), np.sqrt(rho_limp * bulk_eq)
+
+    def porous_layer(self, sigma=None, t=5, model=None, fibre_type=1, porosity=None, tortuosity=None, layer=None, *,
+                     viscous_length=None, thermal_length=None, thermal_permeability=None, static_tortuosity=None,
+                     static_thermal_tortuosity=None, frame="rigid", bulk_density=None, pore_shape_factor=None,
+                     perforation_diameter=None, perforation_spacing=None, preset=None):
         """
         Add a porous layer modelled as an equivalent fluid.
 
         The porous material is treated as an equivalent fluid with complex characteristic impedance ``Zc`` and complex
-        wavenumber ``kc`` from the selected empirical model. For oblique incidence, the tangential wavenumber is
-        conserved at the air/material interface: ``kt = k0*sin(theta)`` and ``kz = sqrt(kc**2 - kt**2)``. The layer
-        transfer matrix is then built with the normal wavenumber ``kz`` and the normal characteristic impedance
-        ``Zc,n = Zc*kc/kz``: ``[[cos(kz*t), j*Zc,n*sin(kz*t)], [j*sin(kz*t)/Zc,n, cos(kz*t)]]``. This is the standard
-        equivalent-fluid extended-reaction form; for notation, see Allard and Atalla [1].
+        wavenumber ``kc`` from the selected model. For oblique incidence, the tangential wavenumber is conserved at the
+        air/material interface: ``kt = k0*sin(theta)`` and ``kz = sqrt(kc**2 - kt**2)``. The layer transfer matrix is
+        then built with the normal wavenumber ``kz`` and the normal characteristic impedance ``Zc,n = Zc*kc/kz``:
+        ``[[cos(kz*t), j*Zc,n*sin(kz*t)], [j*sin(kz*t)/Zc,n, cos(kz*t)]]``. This is the standard equivalent-fluid
+        extended-reaction form; for notation, see Allard and Atalla [1].
+
+        ``preset`` fills ``sigma``, ``porosity``, ``tortuosity``, ``viscous_length``, ``thermal_length``,
+        ``bulk_density`` and, where given, ``thermal_permeability`` with the parameters of one characterized material,
+        and any of these passed explicitly overrides the preset value. An override that differs from the preset raises
+        one ``UserWarning`` listing each changed value, and the record keeps that list as ``preset_overrides``;
+        ``rebuild()`` and ``load()`` do not repeat it. Without ``model``, a preset selects the model in its ``model``
+        column: ``jcal`` for the sets that include a thermal permeability (``q0'``), ``jca`` otherwise. An explicit
+        ``model`` takes only the parameters that model uses, so ``model="jca"`` on a ``jcal`` preset ignores its thermal
+        permeability. Names give the material and its flow resistivity. Each set describes one measured sample, not a
+        material class, and ``jcapl`` always needs its static parameters. The record stores the resolved model and
+        values, so ``log_rebuild()`` does not depend on the preset table. ``porous_presets()`` lists each set with its
+        source page and the source's description of the material.
+
+        ======================= ===== ============ ====== ===== ===== ====== ======= ==== ========
+        ``preset``              model Source       sigma  phi   alpha Lambda Lambda' rho1 q0'
+        ======================= ===== ============ ====== ===== ===== ====== ======= ==== ========
+        ``foam_2.3k``           jcal  [3] I, II    2.3    0.96  1.28  202    376     60   1.67e-08
+        ``carpet_5k``           jca   [1] 11.7     5      0.99  1     23     28      60
+        ``foam_5k``             jca   [1] 11.3     5      0.98  1.1   150    216     33
+        ``foam_6.6k``           jca   [1] 11.9     6.6    0.98  1.03  200    380     11.2
+        ``foam_10.9k``          jca   [1] 11.5 (3) 10.9   0.99  1.02  100    130     8.8
+        ``foam_12.6k``          jca   [1] 13.1     12.569 0.99  1.02  78     192     8.85
+        ``foam_22k``            jca   [1] 11.6     22     0.98  1.9   87     146     30
+        ``foam_22.1k``          jca   [1] 8.1 (2)  22.1   0.97  2.2   39     275     24.5
+        ``felt_23k``            jca   [1] 11.5 (1) 23     0.99  1.4   64     131     66
+        ``glass_wool_24.3k``    jcal  [3] I, II    24.3   0.988 1.01  63     137     53   3.1e-09
+        ``soft_fibrous_25k``    jca   [1] 11.2     25     0.98  1.02  90     180     30
+        ``fibrous_layer_33k``   jca   [1] 11.7     33     0.98  1.1   50     110     60
+        ``fibrous_blanket_34k`` jca   [1] 11.4 (1) 34     0.98  1.18  60     86      41
+        ``mineral_wool_34k``    jca   [1] 12.2     34     0.95  1     40     80      90
+        ``glass_wool_40k``      jca   [1] 11.8     40     0.94  1.06  56     110     130
+        ``foam_50k``            jca   [1] 8.1 (1)  50     0.98  1.4   50     150     25
+        ``rock_wool_51.2k``     jcal  [3] I, II    51.2   0.97  1.06  41     59      183  1.2e-09
+        ``foam_65k``            jca   [1] 11.4 (4) 65     0.99  1.98  37     120     16
+        ``foam_87k``            jca   [1] 11.4 (3) 87     0.97  2.52  36     118     31
+        ``rock_wool_135k``      jcal  [1] 13.2     135    0.94  2.1   49     166     130  3.3e-09
+        ======================= ===== ============ ====== ===== ===== ====== ======= ==== ========
+
+        Units are those of the Parameters below. The number in brackets after a table is its layer or material row.
+        ``soft_fibrous_25k`` is also the material of Panneton [2], Table 1. The [3] sets were measured in [3]: the
+        viscous parameters with the inversion method of [4] and the thermal ones by fitting the Lafarge et al. model
+        of [5] to measured bulk moduli. ``glass_wool_40k`` is the glass wool "Domisol Coffrage" of Saint-Gobain
+        Isover ([1], section 6.5.4); the sources name no other product.
 
         Parameters
         ----------
-        sigma : float or int, optional
-            Flow resistivity of the porous material [k*Pa*s/m²]
+        sigma : float, optional
+            Flow resistivity of the porous material [k*Pa*s/m²]. Defaults to the preset value, or 27 without a preset.
         t : float or int, optional
             Thickness of the porous material [mm]
-        model : string, optional
-            Equivalent-fluid model name. See ``equivalent_fluid_model()`` for the options.
+        model : str, optional
+            Equivalent-fluid model name. See ``equivalent_fluid_model()`` for the options. Defaults to the preset's
+            model (column ``model`` above), or ``"mac"`` without a preset.
         fibre_type : int, optional
             Fibre type for the Mechel-Grundmann model: ``1`` for basalt or rock wool, ``2`` for glass fibre.
         porosity : float, optional
             Open pore volume fraction for models that expose it. Used by ``model="wilson_2015"``, ``model="wilson_db"``,
-            and ``model="mechel_1976"``.
+            ``model="mechel_1976"``, ``jca``, ``jcal``, ``jcapl``, ``attenborough``, ``double_porosity`` and
+            ``frame="limp"``. Defaults to the preset value, or 0.95 without a preset.
         tortuosity : float, optional
-            High-frequency tortuosity-like factor for ``model="wilson_2015"``. Wilson's internal ``q`` is computed as
-            ``sqrt(tortuosity)``.
+            High-frequency tortuosity. Used by ``jca``, ``jcal``, ``jcapl``, ``double_porosity``, ``attenborough`` (as
+            Attenborough's ``q**2``) and ``model="wilson_2015"``, where Wilson's internal ``q`` is computed as
+            ``sqrt(tortuosity)``. Defaults to the preset value, or 1 without a preset.
         layer : None or int, optional
             Optional layer index. If ``None``, the layer is appended.
+        viscous_length : float, optional
+            Viscous characteristic length for ``jca``, ``jcal``, ``jcapl`` and ``double_porosity`` [µm].
+        thermal_length : float, optional
+            Thermal characteristic length for ``jca``, ``jcal``, ``jcapl`` and ``double_porosity`` [µm].
+        thermal_permeability : float, optional
+            Static thermal permeability for ``model="jcal"``, ``model="jcapl"`` and ``model="double_porosity"``
+            [m²].
+        static_tortuosity : float, optional
+            Static viscous tortuosity for ``model="jcapl"``.
+        static_thermal_tortuosity : float, optional
+            Static thermal tortuosity for ``model="jcapl"``.
+        frame : str, optional
+            ``"rigid"`` (default): the frame stays still, valid for held and stiff, heavy, or weakly coupled frames.
+            ``"limp"``: the
+            frame has no stiffness and moves with the pore air, adding its mass through Panneton's limp-frame density;
+            suited to soft, light or unbonded layers, and it changes the result mainly at low frequency. See
+            ``equivalent_fluid_model()`` for the equations and limits.
+        bulk_density : float, optional
+            In-vacuo bulk density of the frame, the mass of solid per unit volume of material, for ``frame="limp"``
+            [kg/m³]. Every preset includes it.
+        pore_shape_factor : float, optional
+            Pore shape factor ratio for ``model="attenborough"``.
+        perforation_diameter : float, optional
+            Diameter of the circular meso-perforations for ``model="double_porosity"`` [mm].
+        perforation_spacing : float, optional
+            Side of the square cell holding one perforation for ``model="double_porosity"`` [mm].
+        preset : str, optional
+            Name of a material parameter set from the table above.
 
         References
         ----------
         [1] J. F. Allard and N. Atalla, "Propagation of Sound in Porous Media: Modelling Sound Absorbing
             Materials", 2nd ed., Wiley, 2009.
+        [2] R. Panneton, "Comments on the limp frame equivalent fluid model for porous media", Journal of the
+            Acoustical Society of America, vol. 122, pp. EL217-EL222, 2007.
+        [3] X. Olny and R. Panneton, "Acoustical determination of the parameters governing thermal dissipation in
+            porous media", Journal of the Acoustical Society of America, vol. 123, pp. 814-824, 2008.
+        [4] R. Panneton and X. Olny, "Acoustical determination of the parameters governing viscous dissipation in
+            porous media", Journal of the Acoustical Society of America, vol. 119, pp. 2027-2040, 2006.
+        [5] D. Lafarge, P. Lemarinier, J. F. Allard and V. Tarnow, "Dynamic compressibility of air in porous
+            structures at audible frequencies", Journal of the Acoustical Society of America, vol. 102,
+            pp. 1995-2006, 1997.
         """
+        preset_overrides = None
+        given = {"sigma": sigma, "porosity": porosity, "tortuosity": tortuosity, "viscous_length": viscous_length,
+                 "thermal_length": thermal_length, "thermal_permeability": thermal_permeability,
+                 "bulk_density": bulk_density}
+        if preset is not None:
+            if preset not in POROUS_PRESETS:
+                raise ValueError(f"Unknown preset {preset!r}. Choose from {sorted(POROUS_PRESETS)}.")
+            values = POROUS_PRESETS[preset]
+            overrides = [f"{name} {values[name]:g} -> {value:g}" for name, value in given.items()
+                         if value is not None and values[name] is not None and value != values[name]]
+            if overrides:
+                preset_overrides = ", ".join(overrides)
+                warnings.warn(f"porous_layer(preset={preset!r}): overriding preset values {preset_overrides}.",
+                              UserWarning, stacklevel=2)
+            given = {name: values[name] if value is None else value for name, value in given.items()}
+            if model is None:
+                model = POROUS_PRESETS[preset]["model"]
+        if model is None:
+            model = "mac"
+        for name, default in (("sigma", 27), ("porosity", 0.95), ("tortuosity", 1.0)):
+            if given[name] is None:
+                given[name] = default
+        sigma, porosity, tortuosity = given["sigma"], given["porosity"], given["tortuosity"]
+        viscous_length, thermal_length = given["viscous_length"], given["thermal_length"]
+        thermal_permeability, bulk_density = given["thermal_permeability"], given["bulk_density"]
+
         # Adjusting units
         t_meters = t / 1000  # Convert millimeters to meters
         sigma_k = sigma * 1000  # Convert kPa*s/m2 to Pa*s/m2
+        if layer is None:
+            layer = len(self.matrix)
+        rigid_backed = self._rigid_backed(layer) if model == "double_porosity" else None
 
         kc, zc = self.equivalent_fluid_model(
             sigma_k,
@@ -1458,6 +1988,18 @@ class TMM:
             fibre_type=fibre_type,
             porosity=porosity,
             tortuosity=tortuosity,
+            viscous_length=None if viscous_length is None else viscous_length * 1e-6,
+            thermal_length=None if thermal_length is None else thermal_length * 1e-6,
+            thermal_permeability=thermal_permeability,
+            static_tortuosity=static_tortuosity,
+            static_thermal_tortuosity=static_thermal_tortuosity,
+            frame=frame,
+            bulk_density=bulk_density,
+            pore_shape_factor=pore_shape_factor,
+            perforation_diameter=None if perforation_diameter is None else perforation_diameter / 1000,
+            perforation_spacing=None if perforation_spacing is None else perforation_spacing / 1000,
+            thickness=t_meters,
+            rigid_backed=rigid_backed,
         )
 
         kc = np.asarray(kc, dtype=complex)[:, None]
@@ -1471,9 +2013,6 @@ class TMM:
         Tp = np.array([[np.cos(kz * t_meters), 1j * zc_normal / self.s0 * np.sin(kz * t_meters)],
                        [1j * self.s0 / zc_normal * np.sin(kz * t_meters), np.cos(kz * t_meters)]])
 
-        if layer is None:
-            layer = len(self.matrix)
-
         self.matrix[layer] = {"type": "porous_layer",
                               "flow_resistivity [k*Pa*s/m²]": sigma,
                               "thickness [mm]": t,
@@ -1481,6 +2020,19 @@ class TMM:
                               "fibre_type": fibre_type,
                               "porosity": porosity,
                               "tortuosity": tortuosity,
+                              "viscous_length [µm]": viscous_length,
+                              "thermal_length [µm]": thermal_length,
+                              "thermal_permeability [m²]": thermal_permeability,
+                              "static_tortuosity": static_tortuosity,
+                              "static_thermal_tortuosity": static_thermal_tortuosity,
+                              "frame": frame,
+                              "bulk_density [kg/m³]": bulk_density,
+                              "preset": preset,
+                              "preset_overrides": preset_overrides,
+                              "pore_shape_factor": pore_shape_factor,
+                              "perforation_diameter [mm]": perforation_diameter,
+                              "perforation_spacing [mm]": perforation_spacing,
+                              "rigid_backed": rigid_backed,
                               # "kc": kc,
                               # "zc": zc,
                               "matrix": Tp,
@@ -1924,7 +2476,8 @@ class TMM:
             ``"eq_fluid"``, and ``"bessel_ingard"``.
         porous_contact : float, optional
             Porous-contact factor ``K`` from 0 to 1. ``0`` disables the term. Only ``method="barrier"`` and
-            ``method="bessel_ingard"`` accept a nonzero value.
+            ``method="bessel_ingard"`` accept a nonzero value. ``compute()`` warns when a nonzero value has no
+            ``porous_layer`` directly before or after the sheet, since the term is then zero.
         layer : None or int, optional
             Optional value to choose the layer level. If None is passed the layer will be added to the existing ones.
 
@@ -2127,7 +2680,8 @@ class TMM:
         method : string, optional
             Slotted-panel calculation method. Only ``"barrier"`` is supported.
         porous_contact : float, optional
-            Porous-contact factor ``K`` from 0 to 1. ``0`` disables the term.
+            Porous-contact factor ``K`` from 0 to 1. ``0`` disables the term. ``compute()`` warns when a nonzero
+            value has no ``porous_layer`` directly before or after the sheet, since the term is then zero.
         layer : None or int, optional
             Optional layer index. If ``None``, the layer is appended.
 
@@ -2276,7 +2830,8 @@ class TMM:
         resistance : float, optional
             Flow resistance in series with the slots, such as a fabric on the plate [Pa*s/m].
         porous_contact : float, optional
-            Porous-contact factor ``K`` from 0 to 1. ``0`` disables the term.
+            Porous-contact factor ``K`` from 0 to 1. ``0`` disables the term. ``compute()`` warns when a nonzero
+            value has no ``porous_layer`` directly before or after the sheet, since the term is then zero.
         layer : None or int, optional
             Optional layer index. If ``None``, the layer is appended.
 
@@ -2830,11 +3385,7 @@ class TMM:
             details = f" Reasons: {reasons}." if reasons else ""
             raise RuntimeError(f"compute() cannot use stale layer matrices. Call rebuild() first.{details}")
 
-        previous_backing = None
-        if self.matrix:
-            last_layer = self.matrix[list(self.matrix.keys())[-1]]
-            if isinstance(last_layer, dict) and last_layer.get("type") == "backing":
-                previous_backing = last_layer
+        previous_backing = self._backing_record()[1]
 
         backing_was_omitted = backing is None
         if backing is None and previous_backing is not None:
@@ -2862,20 +3413,39 @@ class TMM:
             if show_layers:
                 self.show_layers()
 
+    def _backing_record(self, matrix=None):
+        """Return the key and record of the stored backing in ``matrix`` (default ``self.matrix``), or ``None``s."""
+        matrix = self.matrix if matrix is None else matrix
+        for key, record in matrix.items():
+            if isinstance(record, dict) and record.get("type") == "backing":
+                return key, record
+        return None, None
+
     def _compute_global_matrix(self, backing, backing_was_omitted, conj):
         """Multiply the layer matrices, apply the termination, and store the resulting impedances."""
         self.matrix = dict(collections.OrderedDict(sorted(self.matrix.items())))
 
-        if "rigid_backing" in self.matrix[list(self.matrix.keys())[-1]]:
-            self.matrix.pop(list(self.matrix.keys())[-1])
+        backing_key, backing_record = self._backing_record()
+        if backing_record is not None:
+            self.matrix.pop(backing_key)
             if backing_was_omitted and backing is None:
                 backing = "rigid"
+        # The backing record of an earlier compute() sits under a layer index, so layers added afterwards follow it.
+        # Renumber the layers in order so the product below and the neighbour lookups see consecutive indices.
+        self.matrix = {index: record for index, record in enumerate(self.matrix.values())}
 
-        # Sheets with porous contact read their neighbours when built, and layers may be added in any order, so
-        # they are rebuilt here against the final stack.
+        # Sheets with porous contact read their neighbours when built, and a double-porosity layer reads whether it
+        # lies on the rigid wall. Layers may be added in any order, so these are rebuilt here against the final stack.
+        self._build_backing = backing
         for key, record in list(self.matrix.items()):
-            if isinstance(record, dict) and record.get("porous_contact"):
+            if isinstance(record, dict) and (record.get("porous_contact") or record.get("model") == "double_porosity"):
                 self._add_layer_from_record(key, record)
+        for key, record in self.matrix.items():
+            if isinstance(record, dict) and record.get("porous_contact") and not any(
+                    self.matrix.get(neighbour, {}).get("type") == "porous_layer" for neighbour in (key - 1, key + 1)):
+                warnings.warn(f"Layer {key} ({record['type']}) has porous_contact={record['porous_contact']} but no "
+                              "porous_layer directly before or after it, so its contact resistance is zero.",
+                              UserWarning, stacklevel=3)
 
         first_layer = self.matrix[list(self.matrix.keys())[0]]
         if (
@@ -3044,13 +3614,27 @@ class TMM:
     def _add_layer_from_record(self, key, value):
         """Re-create one stored layer at ``key`` from its ``self.matrix`` metadata."""
         if value["type"] == "porous_layer":
-            self.porous_layer(sigma=value["flow_resistivity [k*Pa*s/m²]"],
-                              t=value["thickness [mm]"],
-                              model=value["model"],
-                              fibre_type=value.get("fibre_type", 1),
-                              porosity=value.get("porosity", 0.95),
-                              tortuosity=value.get("tortuosity", 1.0),
-                              layer=key)
+            # The record holds the resolved values, so any preset override was already reported when it was made.
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=r"porous_layer\(preset=")
+                self.porous_layer(sigma=value["flow_resistivity [k*Pa*s/m²]"],
+                                  t=value["thickness [mm]"],
+                                  model=value["model"],
+                                  fibre_type=value.get("fibre_type", 1),
+                                  porosity=value.get("porosity", 0.95),
+                                  tortuosity=value.get("tortuosity", 1.0),
+                                  viscous_length=value.get("viscous_length [µm]"),
+                                  thermal_length=value.get("thermal_length [µm]"),
+                                  thermal_permeability=value.get("thermal_permeability [m²]"),
+                                  static_tortuosity=value.get("static_tortuosity"),
+                                  static_thermal_tortuosity=value.get("static_thermal_tortuosity"),
+                                  frame=value.get("frame", "rigid"),
+                                  bulk_density=value.get("bulk_density [kg/m³]"),
+                                  pore_shape_factor=value.get("pore_shape_factor"),
+                                  perforation_diameter=value.get("perforation_diameter [mm]"),
+                                  perforation_spacing=value.get("perforation_spacing [mm]"),
+                                  preset=value.get("preset"),
+                                  layer=key)
         elif value["type"] == "air_layer":
             self.air_layer(t=value["thickness [mm]"],
                            layer=key)
@@ -3119,17 +3703,19 @@ class TMM:
             else:
                 self.material_model(value["type"], params=value["params"])
 
-        if matrix[list(matrix.keys())[-1]]["type"] == "backing":
-            backing_data = matrix[list(matrix.keys())[-1]]
+        backing_data = self._backing_record(matrix)[1]
+        if backing_data is not None:
             if "diffuse_method" in backing_data:
                 self._diffuse_method = (current_diffuse_method if preserve_diffuse_method
                                         else backing_data["diffuse_method"])
-            self.compute(rigid_backing=backing_data["rigid_backing"],
-                         backing=backing_data.get("backing"),
-                         conj=backing_data["impedance_conjugate"],
-                         show_layers=False)
+            compute_args = dict(rigid_backing=backing_data["rigid_backing"], backing=backing_data.get("backing"),
+                                conj=backing_data["impedance_conjugate"])
         else:
-            self.compute(rigid_backing=False, show_layers=False)
+            compute_args = dict(rigid_backing=False)
+        # A missing porous neighbour was reported when the stack was first computed.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=r"Layer \d+ .* has porous_contact=")
+            self.compute(show_layers=False, **compute_args)
         self._clear_stale_state()
 
     def _describe_frequency_vector(self):
@@ -3195,6 +3781,11 @@ class TMM:
                         optional_args += f", porosity={value['porosity']}"
                     if value.get("tortuosity", 1.0) != 1.0:
                         optional_args += f", tortuosity={value['tortuosity']}"
+                    for arg, record_key in POROUS_LOG_KEYS:
+                        if value.get(record_key) is not None:
+                            optional_args += f", {arg}={value[record_key]!r}"
+                    if value.get("frame", "rigid") != "rigid":
+                        optional_args += f", frame={value['frame']!r}"
                     logged_calls.append(
                         f"{self.filename}.porous_layer("
                         f"model='{value['model']}', "
@@ -3270,8 +3861,8 @@ class TMM:
             else:
                 logged_calls.append(f"{self.filename}.material_model('{value['type']}', params={value['params']})")
 
-        if matrix[list(matrix.keys())[-1]]["type"] == "backing":
-            backing_data = matrix[list(matrix.keys())[-1]]
+        backing_data = self._backing_record(matrix)[1]
+        if backing_data is not None:
             backing = backing_data.get("backing")
             if backing is None:
                 logged_calls.append(
@@ -3327,6 +3918,26 @@ class TMM:
                 keys.extend(["porosity", "tortuosity"])
             elif model == "mechel_grundmann":
                 keys.append("fibre_type")
+            elif model in JCA_MODELS:
+                keys.extend(["porosity", "tortuosity", "viscous_length [µm]", "thermal_length [µm]"])
+                if model != "jca":
+                    keys.append("thermal_permeability [m²]")
+                if model == "jcapl":
+                    keys.extend(["static_tortuosity", "static_thermal_tortuosity"])
+            elif model == "attenborough":
+                keys.extend(["porosity", "tortuosity", "pore_shape_factor"])
+            elif model == "double_porosity":
+                keys.extend(["porosity", "tortuosity", "viscous_length [µm]", "thermal_length [µm]",
+                             "thermal_permeability [m²]", "perforation_diameter [mm]", "perforation_spacing [mm]",
+                             "rigid_backed"])
+            if layer_data.get("frame", "rigid") == "limp":
+                if "porosity" not in keys:
+                    keys.append("porosity")
+                keys.extend(["frame", "bulk_density [kg/m³]"])
+            if layer_data.get("preset") is not None:
+                keys.insert(2, "preset")
+                if layer_data.get("preset_overrides"):
+                    keys.insert(3, "preset_overrides")
         elif layer_type == "air_layer":
             keys = ["type", "thickness [mm]"]
         elif layer_type == "membrane_layer":
