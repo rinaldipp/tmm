@@ -172,6 +172,50 @@ POROUS_LOG_KEYS = (
     ("perforation_spacing", "perforation_spacing [mm]"),
 )
 
+# Validity ranges of the porous models, as their sources give them. "variable" is the quantity the source bounds:
+# "f/sigma" [m³/kg] or "X" = rho0*f/sigma. "basis" is "stated" when the source states the range, "data" when it is only
+# the span of the data the model was fitted to. "sigma" [k*Pa*s/m²] and "frequency" [Hz] are the spans of the fitted
+# data. None marks an open end or a range the source does not give. The sources of the models absent from the table
+# state no range.
+POROUS_VALIDITY = {
+    "db": {"variable": "f/sigma", "range": (0.01, 1.0), "basis": "stated", "sigma": (2.0, 80.0),
+           "frequency": (250.0, 4000.0), "material": "glass fibre and mineral wool",
+           "source": "Delany and Bazley (1970), p. 111 (10 < f/sigma <= 1000 in cgs units) and p. 108"},
+    "miki": {"variable": "f/sigma", "range": (0.01, 1.0), "basis": "data", "sigma": (2.0, 80.0),
+             "frequency": (250.0, 4000.0), "material": "fibrous",
+             "source": "Miki (1990), p. 21: regression on the Delany and Bazley data"},
+    "qunli": {"variable": None, "range": None, "basis": "data", "sigma": (2.9, 24.3), "frequency": (200.0, 2000.0),
+              "material": "open-cell plastic foam of medium flow resistivity",
+              "source": "Wu (1988), p. 143 (15 foams) and p. 146"},
+    "mac": {"variable": "f/sigma", "range": (45 / 28e3, 11e3 / 28e3), "basis": "data", "sigma": None,
+            "frequency": None, "material": "glass wool",
+            "source": "Oliva and Hongisto (2013), p. 1476: Method 8, fitted over 45-11000 Hz to Allard and Champoux "
+                      "(1992) for one 28 k*Pa*s/m² wool"},
+    "komatsu": {"variable": "f/sigma", "range": (100 / 72.9e3, 5000 / 6e3), "basis": "data", "sigma": (6.0, 72.9),
+                "frequency": (100.0, 5000.0), "material": "glass wool and rock wool",
+                "source": "Komatsu (2008), Table 3 and section 3"},
+    "mechel_1976": {"variable": "X", "range": (None, 1.0), "basis": "stated", "sigma": None, "frequency": None,
+                    "material": "fibrous",
+                    "source": "Mechel (1976), p. 213: power law for 1 <= C <= 60, Rayleigh model for C > 60"},
+    "mechel_gf_lowX": {"variable": "X", "range": (None, 0.025), "basis": "stated", "sigma": None, "frequency": None,
+                       "material": "glass fibre",
+                       "source": "Attenborough and Ver (2006), Table 8.2, p. 242: E <= 0.025"},
+    "mechel_gf_highX": {"variable": "X", "range": (0.025, None), "basis": "stated", "sigma": None, "frequency": None,
+                        "material": "glass fibre",
+                        "source": "Attenborough and Ver (2006), Table 8.2, p. 242: E > 0.025"},
+    "mechel_rf_lowX": {"variable": "X", "range": (None, 0.025), "basis": "stated", "sigma": None, "frequency": None,
+                       "material": "mineral and basalt wool",
+                       "source": "Attenborough and Ver (2006), Table 8.2, p. 242: E <= 0.025"},
+    "mechel_rf_highX": {"variable": "X", "range": (0.025, None), "basis": "stated", "sigma": None, "frequency": None,
+                        "material": "mineral and basalt wool",
+                        "source": "Attenborough and Ver (2006), Table 8.2, p. 242: E > 0.025"},
+    "mechel_grundmann": {"variable": "X", "range": (0.003, 0.4), "basis": "stated", "sigma": None, "frequency": None,
+                         "material": "mineral fibre (fibre_type=1) and glass fibre (fibre_type=2)",
+                         "source": "Mechel et al. (2008), Formulas of Acoustics, section G.11, p. 399"},
+    "garai_pompoli": {"variable": None, "range": None, "basis": "data", "sigma": (0.88, 22.699), "frequency": None,
+                      "material": "polyester fibre", "source": "Garai and Pompoli (2005), Table 1"},
+}
+
 # Angular intensity weightings w(theta) of Jeong (2013), Table II, tabulated from the phased beam-tracing results of
 # Jeong (2010). Rows are the 250 Hz to 4 kHz octave bands, columns 0 to 90 degrees in 15-degree steps. Keys follow the
 # figure captions of Jeong (2010): Table II labels its w1 block "floor in a rectangular room", but its values are the
@@ -1355,9 +1399,15 @@ class TMM:
         ``Zc = Z0*(1 + C5*X**(-C6) - 1j*C7*X**(-C8))``, where ``X = rho0*f/sigma`` and ``sigma`` is in SI units
         [Pa*s/m2] inside this method. This family includes ``db``, ``miki``, ``qunli``, ``mac``, ``mechel_gf_lowX``,
         ``mechel_gf_highX``, ``mechel_rf_lowX``, and ``mechel_rf_highX``. The implementation follows the generic
-        empirical equivalent-fluid form presented by Cox and D'Antonio [1], section 6.5.1. The coefficient table is
-        consistent with the Delany-Bazley-Miki model options listed in the COMSOL Acoustics Module porous-model
-        documentation: https://doc.comsol.com/6.4/doc/com.comsol.help.aco/aco_ug_pressure.05.005.html#1226466.
+        empirical equivalent-fluid form presented by Cox and D'Antonio [1], section 6.5.1. The ``db``, ``miki``,
+        ``qunli`` and ``mac`` rows follow the Delany-Bazley-Miki options of the COMSOL Acoustics Module documentation,
+        https://doc.comsol.com/6.4/doc/com.comsol.help.aco/aco_ug_pressure.05.005.html#1226466. The four ``mechel_*``
+        sets follow Table 8.2 of [11], whose glass-fibre ``E <= 0.025`` row gives ``C5 = 0.0668``. ``qunli`` takes
+        Table 2 of Wu [12]; the paper's equation 2 prints ``0.212*E**-0.455`` for the real part of ``Zc/Z0 - 1`` and
+        ``0.188*E**-0.544`` for that of ``kc/k0 - 1``. ``garai_pompoli`` takes the same form with the coefficients that
+        Garai and Pompoli [10] fitted to polyester fibre blankets (equations 3-6 and Table 3, which lists the impedance
+        coefficients first), here ``C1..C4 = 0.121, 0.530, 0.159, 0.571`` for ``kc`` and
+        ``C5..C8 = 0.078, 0.623, 0.074, 0.660`` for ``Zc``.
 
         The remaining branches use separate equations. ``komatsu`` follows Komatsu [2], equations 15-18, using powers of
         ``2 - log10(f/sigma)``. ``mechel_1976`` follows Mechel's [3] low-frequency extension of the Delany-Bazley
@@ -1424,11 +1474,12 @@ class TMM:
         perforation ratio; when the condition fails, perforating can lower the absorption.
 
         The model follows from the parameters known for the material. With ``sigma`` only, use the empirical sets:
-        ``qunli`` for porous plastics and open foams within the COMSOL-listed range of approximately 200-2000 Hz and
-        ``3e3 <= sigma <= 24e3`` Pa*s/m2, and ``mac`` for the Modified Champoux-Allard set within its listed range of
-        approximately 45-11000 Hz. Use ``mechel_1976`` when open porosity is also known and ``wilson_2015`` when
-        porosity and tortuosity are. ``jca`` needs both characteristic lengths, ``jcal`` adds the static thermal
-        permeability and ``jcapl`` the two static tortuosities; ``porous_layer(preset=...)`` supplies measured sets.
+        ``qunli`` for porous plastics and open foams, ``garai_pompoli`` for polyester fibre blankets, and ``db``,
+        ``miki``, ``mac``, ``komatsu`` or the Mechel sets for glass and mineral wool. Each set holds within the range
+        of its source, which ``POROUS_VALIDITY`` lists and ``show_layers(validity=True)`` checks against the stack.
+        Use ``mechel_1976`` when open porosity is also known and ``wilson_2015`` when porosity and tortuosity are.
+        ``jca`` needs both characteristic lengths, ``jcal`` adds the static thermal permeability and ``jcapl`` the two
+        static tortuosities; ``porous_layer(preset=...)`` supplies measured sets.
         ``attenborough`` describes soils, sands and other granular media through the pore shape factor [7].
         ``double_porosity`` applies to a porous panel perforated with holes much larger than its pores, typically a
         dense, highly resistive material [8].
@@ -1503,6 +1554,13 @@ class TMM:
         [9] D. Lafarge, P. Lemarinier, J. F. Allard and V. Tarnow, "Dynamic compressibility of air in porous
             structures at audible frequencies", Journal of the Acoustical Society of America, vol. 102,
             pp. 1995-2006, 1997.
+        [10] M. Garai and F. Pompoli, "A simple empirical model of polyester fibre materials for acoustical
+            applications", Applied Acoustics, vol. 66, pp. 1383-1398, 2005.
+        [11] K. Attenborough and I. L. Vér, "Sound-absorbing materials and sound absorbers", in I. L. Vér and
+            L. L. Beranek (eds.), "Noise and Vibration Control Engineering: Principles and Applications", 2nd ed.,
+            Wiley, 2006, chapter 8.
+        [12] Q. Wu, "Empirical relations between acoustical properties and flow resistivity of porous plastic
+            open-cell foam", Applied Acoustics, vol. 25, pp. 141-148, 1988.
         """
         if frame not in POROUS_FRAMES:
             raise ValueError(f"frame must be one of {POROUS_FRAMES}.")
@@ -1510,11 +1568,12 @@ class TMM:
             "db": [0.0978, 0.7, 0.189, 0.595, 0.0571, 0.754, 0.087, 0.732],  # Delaney-Bazley
             "miki": [0.122, 0.618, 0.18, 0.618, 0.079, 0.632, 0.12, 0.632],  # Miki
             "qunli": [0.188, 0.554, 0.163, 0.592, 0.209, 0.548, 0.105, 0.607],  # Qunli
-            "mechel_gf_lowX": [0.135, 0.646, 0.396, 0.458, 0.0688, 0.707, 0.196, 0.549],  # Mechel, glass fiber, low X
+            "mechel_gf_lowX": [0.135, 0.646, 0.396, 0.458, 0.0668, 0.707, 0.196, 0.549],  # Mechel, glass fiber, low X
             "mechel_gf_highX": [0.102, 0.705, 0.179, 0.674, 0.0235, 0.887, 0.0875, 0.77],  # Mechel, glass fiber, high X
             "mechel_rf_lowX": [0.136, 0.641, 0.322, 0.502, 0.081, 0.699, 0.191, 0.556],  # Mechel, rock fiber, low X
             "mechel_rf_highX": [0.103, 0.716, 0.179, 0.663, 0.0563, 0.725, 0.127, 0.655],  # Mechel, rock fiber, high X
             "mac": [0.0982, 0.685, 0.288, 0.526, 0.0729, 0.66228, 0.187, 0.5379],  # Modified Allard and Champoux
+            "garai_pompoli": [0.121, 0.530, 0.159, 0.571, 0.078, 0.623, 0.074, 0.660],  # Garai-Pompoli, polyester
         }
 
         if model in coefficients.keys():
@@ -3981,7 +4040,77 @@ class TMM:
         other_keys = [key for key in self.matrix.keys() if not isinstance(key, int)]
         return numeric_keys + other_keys
 
-    def show_layers(self, conversion=None):
+    @staticmethod
+    def _band_status(f_low, f_high, fmin, fmax):
+        """Describe where the band ``[fmin, fmax]`` leaves the valid band ``[f_low, f_high]`` (``None`` = open)."""
+        f_low = fmin if f_low is None else f_low
+        f_high = fmax if f_high is None else f_high
+        if f_high < fmin or f_low > fmax or f_low > f_high:
+            return "outside", "outside over the whole band"
+        below, above = f_low > fmin, f_high < fmax
+        if below and above:
+            return "partly outside", f"outside below {f_low:0.0f} Hz and above {f_high:0.0f} Hz"
+        if below:
+            return "partly outside", f"outside below {f_low:0.0f} Hz"
+        if above:
+            return "partly outside", f"outside above {f_high:0.0f} Hz"
+        return "inside", "inside"
+
+    def porous_validity(self, layer_data):
+        """
+        Check a porous layer record against the validity range of its model, as tabulated in ``POROUS_VALIDITY``.
+
+        Up to three checks are made. ``range`` maps the source's bound on ``f/sigma`` or ``X = rho0*f/sigma`` to a
+        frequency band for the layer's ``sigma`` and compares it with the computed band. ``sigma`` and ``frequency``
+        compare the layer with the span of the data the model was fitted to. Each check has a ``basis``: ``"stated"``
+        when the source states the range as a limit, ``"data"`` when it is only the span of the fitted data.
+
+        Parameters
+        ----------
+        layer_data : dict
+            A ``porous_layer`` record of ``self.matrix``.
+
+        Returns
+        -------
+        dict
+            ``model``, ``material``, ``source`` and ``checks``, a list of dictionaries with ``check``, ``basis``,
+            ``limits``, ``status`` (``"inside"``, ``"partly outside"`` or ``"outside"``) and ``detail``. ``checks`` is
+            empty when the source states no range.
+        """
+        model = layer_data.get("model")
+        entry = POROUS_VALIDITY.get(model)
+        if entry is None:
+            return {"model": model, "material": None, "source": None, "checks": []}
+        sigma_k = layer_data["flow_resistivity [k*Pa*s/m²]"]
+        sigma = sigma_k * 1000
+        fmin, fmax = float(np.min(self.freq)), float(np.max(self.freq))
+        checks = []
+        if entry["range"] is not None:
+            scale = 1 / sigma if entry["variable"] == "f/sigma" else self.rho0 / sigma
+            low, high = entry["range"]
+            status, detail = self._band_status(None if low is None else low / scale,
+                                               None if high is None else high / scale, fmin, fmax)
+            limits = entry["variable"]
+            if low is not None:
+                limits = f"{low:.3g} <= {limits}"
+            if high is not None:
+                limits = f"{limits} <= {high:.3g}"
+            checks.append({"check": "range", "basis": entry["basis"], "limits": limits, "status": status,
+                           "detail": detail})
+        if entry["sigma"] is not None:
+            low, high = entry["sigma"]
+            inside = low <= sigma_k <= high
+            checks.append({"check": "sigma", "basis": "data", "limits": f"{low:g}-{high:g} k*Pa*s/m²",
+                           "status": "inside" if inside else "outside",
+                           "detail": "inside" if inside else f"sigma = {sigma_k:g} is outside"})
+        if entry["frequency"] is not None:
+            low, high = entry["frequency"]
+            status, detail = self._band_status(low, high, fmin, fmax)
+            checks.append({"check": "frequency", "basis": "data", "limits": f"{low:g}-{high:g} Hz", "status": status,
+                           "detail": detail})
+        return {"model": model, "material": entry["material"], "source": entry["source"], "checks": checks}
+
+    def show_layers(self, conversion=None, validity=False):
         """
         Print each layer with its details.
 
@@ -3989,6 +4118,9 @@ class TMM:
         ----------
         conversion : list or float and string, optional
             List containing conversion ratio and string containing the name of the converted unit.
+        validity : bool, optional
+            Also print, for each porous layer, whether its flow resistivity and the computed frequency band fall
+            within the validity range of its model. See ``porous_validity()``.
         """
         if conversion is None:
             conversion = [0.0393701, "[inches]"]
@@ -4021,8 +4153,22 @@ class TMM:
                         total_depth += value
                 else:
                     print(f"\t{key}: {value}")
+            if validity and self.matrix[layer_key].get("type") == "porous_layer":
+                self._print_porous_validity(self.matrix[layer_key])
         print(f"\nTotal treatment depth [mm]: {total_depth:0.2f} | " +
               f"Total treatment depth {conversion[1]}: {total_depth * conversion[0]:0.2f}")
+
+    def _print_porous_validity(self, layer_data):
+        """Print the ``porous_validity()`` checks of one porous layer under its ``show_layers()`` entry."""
+        result = self.porous_validity(layer_data)
+        if not result["checks"]:
+            print("\tvalidity: no range stated by the source")
+            return
+        print(f"\tvalidity ({result['material']}):")
+        for check in result["checks"]:
+            basis = "stated" if check["basis"] == "stated" else "fitted data"
+            print(f"\t\t{check['check']}, {basis}, {check['limits']}: {check['detail']}")
+        print(f"\t\tsource: {result['source']}")
 
     def _normal_incidence_alpha(self):
         """Return the normal-incidence absorption coefficient, whatever the treatment's incidence mode is."""
