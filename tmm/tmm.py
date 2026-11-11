@@ -2263,7 +2263,8 @@ class TMM:
         With ``in_contact=True`` the layer's own matrix is the identity, and ``compute()`` adds ``Zf`` to the opening
         branch of the plate directly before or after it: ``perforated_panel_layer``, ``slotted_panel_layer`` or
         ``rectangular_slot_layer``. There ``Zf/phi`` enters before any plate-mass coupling. [3] and [4] give the
-        resistance part; dividing the full sheet impedance, mass included, by ``phi`` is a package extension.
+        resistance part; dividing the full sheet impedance, mass included, by ``phi`` is a package extension. On the
+        exit face of a plate with ``method="conical"``, ``phi`` is the open area of that face (see the plate methods).
         ``compute()`` raises if no such plate lies next to the sheet or if plates lie on both sides.
 
         Parameters
@@ -2542,18 +2543,208 @@ class TMM:
 
         return z_sheet
 
+    @staticmethod
+    def _mouth_radiation(shape, x):
+        """
+        Return the radiation impedance of a baffled aperture mouth, normalized by ``rho0*c0``.
+
+        ``shape="hole"`` is the circular piston of Vigran (2004), equation 9, and ``shape="slot"`` the strip of equation
+        20, both at ``x = 2*k*a`` for radius or half-width ``a``. A complex ``x`` (a porous medium) must have
+        ``Re(x) > 0`` and ``Im(x) <= 0``, as a passive wavenumber gives. It uses the power series of the Struve
+        functions ``S0`` and ``S1`` below ``|x| = 18`` (F. W. J. Olver, D. W. Lozier, R. F. Boisvert and C. W. Clark,
+        eds., "NIST Handbook of Mathematical Functions", Cambridge University Press, 2010, equation 11.2.1, where
+        ``S_n`` is written ``H_n``). Above it the Bessel and Struve terms grow as ``exp(|Im(x)|)`` and cancel, so
+        ``J1`` is written as ``H1 + 1j*Y1``, with ``H1`` the Hankel function of the second kind, and the bounded
+        differences ``K_n = S_n - Y_n`` (equation 11.2.5) are taken from their asymptotic series (equation 11.6.1),
+        truncated at the smallest term. For the strip, ``H1*Y0 - H0*Y1 = J1*Y0 - J0*Y1 = 2/(pi*x)``, the Wronskian of
+        equation 10.5.2.
+        """
+        x = np.asarray(x)
+        if not (np.iscomplexobj(x) and np.any(x.imag != 0)):
+            x = x.real
+            if shape == "hole":
+                return 1 - 2 * jv(1, x) / x + 2j * special.struve(1, x) / x
+            h0, h1 = special.hankel2(0, x), special.hankel2(1, x)
+            return (x * (h0 + np.pi / 2 * (h1 * special.struve(0, x) - h0 * special.struve(1, x))) - h1
+                    + 2j / (np.pi * x))
+        x = x.astype(complex)
+        if np.any(x.real <= 0) or np.any(x.imag > 0):
+            raise ValueError("The mouth radiation is evaluated for Re(x) > 0 and Im(x) <= 0 only.")
+        scalar = x.ndim == 0
+        x = np.atleast_1d(x)
+        out = np.empty_like(x)
+        small = np.abs(x) < 18
+        z = x[small]
+        if shape == "hole":
+            out[small] = 1 - 2 * jv(1, z) / z + 2j * TMM._struve_series(1, z) / z
+        else:
+            h0, h1 = special.hankel2(0, z), special.hankel2(1, z)
+            out[small] = (z * (h0 + np.pi / 2 * (h1 * TMM._struve_series(0, z) - h0 * TMM._struve_series(1, z))) - h1
+                          + 2j / (np.pi * z))
+        z = x[~small]
+        h0, h1 = special.hankel2(0, z), special.hankel2(1, z)
+        if shape == "hole":
+            out[~small] = 1 - 2 * h1 / z + 2j * TMM._struve_minus_y(1, z) / z
+        else:
+            bracket = h1 * TMM._struve_minus_y(0, z) - h0 * TMM._struve_minus_y(1, z) + 2 / (np.pi * z)
+            out[~small] = z * (h0 + np.pi / 2 * bracket) - h1 + 2j / (np.pi * z)
+        return out[0] if scalar else out
+
+    @staticmethod
+    def _struve_series(n, z, terms=80):
+        """Return the Struve function ``S_n(z)`` (``n`` = 0 or 1) from its power series, NIST Handbook eq. 11.2.1."""
+        out = np.zeros_like(z)
+        half = z / 2
+        power = half ** (n + 1)
+        for k in range(terms):
+            out = out + (-1) ** k * power / (special.gamma(k + 1.5) * special.gamma(k + n + 1.5))
+            power = power * half ** 2
+        return out
+
+    @staticmethod
+    def _struve_minus_y(n, z, terms=40):
+        """
+        Return ``K_n(z) = S_n(z) - Y_n(z)`` (``n`` = 0 or 1) from the asymptotic series of NIST Handbook eq. 11.6.1,
+        ``(1/pi)*sum(Gamma(k + 1/2)*(z/2)**(n - 2*k - 1)/Gamma(n + 1/2 - k))``, truncated at its smallest term.
+        """
+        out = np.zeros_like(z)
+        smallest = np.full(z.shape, np.inf)
+        stopped = np.zeros(z.shape, dtype=bool)
+        for k in range(terms):
+            term = special.gamma(k + 0.5) * (z / 2) ** (n - 2 * k - 1) / special.gamma(n + 0.5 - k) / np.pi
+            stopped |= np.abs(term) > smallest
+            out = np.where(stopped, out, out + term)
+            smallest = np.where(stopped, smallest, np.abs(term))
+        return out
+
+    def _tapered_aperture_impedance(self, shape, t_meters, a, b, zb):
+        """
+        Return the input impedance ``Zi`` [Pa*s/m] at the narrow mouth of a conical hole or wedge-shaped slot.
+
+        Closed form of Vigran (2004), equations 16 and 17 (holes) and 23 and 25 (slots). The exit rows of the system
+        fix the ratio ``B2/A2`` of the backward and forward waves from the normalized exit load ``zb``, and ``Zi``
+        follows at ``x1 = a*h/(b - a)``. The entrance radiation does not enter ``Zi``.
+        """
+        k = self.k0
+        z0 = self.rho0 * self.c0
+        x1, x2 = a * t_meters / (b - a), b * t_meters / (b - a)
+        if shape == "hole":
+            e1, e2 = np.exp(-1j * k * x1), np.exp(-1j * k * x2)
+            ratio = -e2 ** 2 * ((1 + 1j * k * x2) * zb - 1j * k * x2) / ((1 - 1j * k * x2) * zb - 1j * k * x2)
+            pressure = e1 + ratio / e1
+            velocity = (1 + 1j * k * x1) * e1 + ratio * (1 - 1j * k * x1) / e1
+            return 1j * z0 * k * x1 * pressure / velocity
+        h0m2, h1m2 = special.hankel2(0, k * x2), special.hankel2(1, k * x2)
+        h0p2, h1p2 = special.hankel1(0, k * x2), special.hankel1(1, k * x2)
+        ratio = (1j * h0m2 - zb * h1m2) / (1j * h0p2 - zb * h1p2)
+        h0m1, h1m1 = special.hankel2(0, k * x1), special.hankel2(1, k * x1)
+        h0p1, h1p1 = special.hankel1(0, k * x1), special.hankel1(1, k * x1)
+        return 1j * z0 * (h0m1 - ratio * h0p1) / (h1m1 - ratio * h1p1)
+
+    def _porous_record_properties(self, record, layer=None):
+        """
+        Return ``(kc, zc)`` of a stored ``porous_layer`` record on the frequency grid, as ``porous_layer`` does.
+
+        For a double-porosity record at ``layer``, whether it lies on the rigid wall is taken from its position in the
+        current stack, since the stored value may predate the backing of this ``compute()``.
+        """
+        def scaled(key, factor):
+            value = record.get(key)
+            return None if value is None else value * factor
+
+        kc, zc = self.equivalent_fluid_model(
+            record["flow_resistivity [k*Pa*s/m²]"] * 1000,
+            model=record["model"],
+            fibre_type=record.get("fibre_type", 1),
+            porosity=record.get("porosity"),
+            tortuosity=record.get("tortuosity"),
+            viscous_length=scaled("viscous_length [µm]", 1e-6),
+            thermal_length=scaled("thermal_length [µm]", 1e-6),
+            thermal_permeability=record.get("thermal_permeability [m²]"),
+            static_tortuosity=record.get("static_tortuosity"),
+            static_thermal_tortuosity=record.get("static_thermal_tortuosity"),
+            frame=record.get("frame", "rigid"),
+            bulk_density=record.get("bulk_density [kg/m³]"),
+            pore_shape_factor=record.get("pore_shape_factor"),
+            perforation_diameter=scaled("perforation_diameter [mm]", 1e-3),
+            perforation_spacing=scaled("perforation_spacing [mm]", 1e-3),
+            thickness=record["thickness [mm]"] / 1000,
+            rigid_backed=(self._rigid_backed(layer) if layer is not None and record["model"] == "double_porosity"
+                          else record.get("rigid_backed")),
+        )
+        return np.asarray(kc, dtype=complex).reshape(-1), np.asarray(zc, dtype=complex).reshape(-1)
+
+    def _exit_porous_layer(self, layer):
+        """
+        Return the key of the ``porous_layer`` behind the plate at ``layer``, or ``None``.
+
+        An in-contact ``porous_facing_layer`` on the exit face is a sheet resting on the plate, so the lookup steps
+        over it to the layer behind.
+        """
+        behind = layer + 1
+        record = self.matrix.get(behind)
+        if isinstance(record, dict) and record.get("type") == "porous_facing_layer" and record.get("in_contact"):
+            behind += 1
+            record = self.matrix.get(behind)
+        return behind if isinstance(record, dict) and record.get("type") == "porous_layer" else None
+
+    @staticmethod
+    def _validate_exit_radiation(exit_radiation, method):
+        """Raise for an unknown ``exit_radiation`` or one set on a method without a conical aperture."""
+        if exit_radiation not in {"air", "porous", "mean"}:
+            raise ValueError("exit_radiation must be 'air', 'porous', or 'mean'.")
+        if method != "conical" and exit_radiation != "air":
+            raise ValueError("exit_radiation is only used by method='conical'.")
+
+    @staticmethod
+    def _warn_cone_angle(t, entrance, exit_size, layer_type):
+        """Warn when the cone or wedge angle, taken as the half-angle, exceeds the about 30 degrees of the source."""
+        half_angle = np.degrees(np.arctan((exit_size - entrance) / (2 * t)))
+        if half_angle > 30:
+            warnings.warn(f"{layer_type}(method='conical'): the aperture half-angle is {half_angle:.0f} degrees; the "
+                          "source limits the cone angle, taken here as the half-angle, to about 30 degrees.",
+                          UserWarning, stacklevel=3)
+
+    def _conical_sheet_impedance(self, shape, layer, t_meters, a, b, open_area, open_area_exit, open_area_mean,
+                                 exit_radiation, rho, mechanical_resistance):
+        """
+        Return the specific sheet impedance [Pa*s/m] of a plate with conical holes or wedge-shaped slots.
+
+        ``Zp = (Zi + Zf_entrance)/phi + Zf_exit/phi_exit`` (Vigran 2004, equation 27), with the in-contact facing
+        impedances ``Zf`` of each face. With ``exit_radiation="porous"`` or ``"mean"`` and a ``porous_layer`` behind the
+        plate (see ``_exit_porous_layer``), the exit mouth radiates into that medium (characteristic impedance ``zc``,
+        wavenumber ``kc``) or into the mean of it and air; without that neighbour the air load is used here and
+        ``compute()`` raises. The optional plate mass uses the mean open area through the plate.
+        """
+        z0 = self.rho0 * self.c0
+        zb = self._mouth_radiation(shape, 2 * self.k0 * b)
+        neighbour = self._exit_porous_layer(layer) if exit_radiation != "air" else None
+        if neighbour is not None:
+            kc, zc = self._porous_record_properties(self.matrix[neighbour], neighbour)
+            zb_porous = zc / z0 * self._mouth_radiation(shape, 2 * kc * b)
+            zb = zb_porous if exit_radiation == "porous" else (zb + zb_porous) / 2
+        zi = self._tapered_aperture_impedance(shape, t_meters, a, b, zb)
+        z_sheet = ((zi + self._contact_facing_impedance(layer, side=-1)) / open_area
+                   + self._contact_facing_impedance(layer, side=1) / open_area_exit)
+        if rho:
+            # Package extension: plate motion with the solid fraction of the mean open area through the plate
+            plate = mechanical_resistance * z0 + 1j * self.w0 * rho * t_meters * (1 - open_area_mean)
+            z_sheet = 1 / (1 / z_sheet + 1 / plate)
+        return z_sheet
+
     def perforated_panel_layer(self, t=19, d=8, s=16, open_area=None, rho=None, end_correction=None, method="barrier",
-                               porous_contact=0, layer=None, *, mechanical_resistance=0):
+                               porous_contact=0, layer=None, *, mechanical_resistance=0, d_exit=None,
+                               exit_radiation="air"):
         """
         Add a perforated plate with circular holes as a transfer-matrix layer.
 
-        The available formulations fall into two matrix topologies. ``"barrier"``, ``"barrier_mpp"``, and
-        ``"bessel_ingard"`` model the perforated plate as a local surface impedance using a pressure-jump transfer
-        matrix. Their aperture and optional plate-mass terms are first combined as specific impedances; the matrix entry
-        is then ``Zp/S0`` because the package matrices use volume velocity, where ``S0`` is ``self.s0``. ``"eq_fluid"``
-        treats the holes as finite viscothermal ducts and uses a finite-length propagation matrix. When ``rho`` is
-        supplied, a plate-mass path is coupled in parallel with the perforation impedance, with the mass convention
-        given under ``rho`` below.
+        The available formulations fall into two matrix topologies. ``"barrier"``, ``"barrier_mpp"``,
+        ``"bessel_ingard"``, and ``"conical"`` model the perforated plate as a local surface impedance using a
+        pressure-jump transfer matrix. Their aperture and optional plate-mass terms are first combined as specific
+        impedances; the matrix entry is then ``Zp/S0`` because the package matrices use volume velocity, where ``S0`` is
+        ``self.s0``. ``"eq_fluid"`` treats the holes as finite viscothermal ducts and uses a finite-length propagation
+        matrix. When ``rho`` is supplied, a plate-mass path is coupled in parallel with the perforation impedance, with
+        the mass convention given under ``rho`` below.
 
         ``method="barrier"`` implements the Helmholtz-resonator perforated-sheet impedance of Cox and D'Antonio [1],
         equation 7.21 (section 7.3.3.3), which combines the acoustic mass of equation 7.6 with the viscous resistance of
@@ -2606,6 +2797,39 @@ class TMM:
         added. If ``rho`` is supplied, the full-surface plate mass ``1j*omega*rho*t`` is coupled in parallel with
         ``Zp``, as in the membrane and aperture circuit of Kang and Fuchs [5], equations 1 and 9.
 
+        ``method="conical"`` implements the conical holes of Vigran [8]. The hole diameter grows from ``d`` on the
+        incident face to ``d_exit`` on the other face, so the narrow end must face the incident side. The air in the
+        hole carries spherical waves from the virtual apex of the cone, which lies ``x1 = a*t/(b - a)`` before the
+        entrance and ``x2 = b*t/(b - a)`` before the exit for the radii ``a = d/2`` and ``b = d_exit/2``. The exit mouth
+        radiates as a baffled piston,
+
+        ``Zb = 1 - 2*J1(2*k*b)/(2*k*b) + 2j*S1(2*k*b)/(2*k*b)``,
+
+        normalized by ``rho0*c0``, with the Struve function ``S1`` ([8], equation 9). The exit conditions of [8],
+        equations 12 and 13, fix the ratio of the backward and forward waves in the hole,
+
+        ``r = -exp(-2j*k*x2)*((1 + 1j*k*x2)*Zb - 1j*k*x2)/((1 - 1j*k*x2)*Zb - 1j*k*x2)``,
+
+        and equations 11 and 16 give the input impedance at the entrance mouth, with ``E1 = exp(-1j*k*x1)``,
+
+        ``Zi = 1j*rho0*c0*k*x1*(E1 + r/E1)/((1 + 1j*k*x1)*E1 + r*(1 - 1j*k*x1)/E1)``.
+
+        The entrance radiation does not enter ``Zi``, and the sheet impedance is ``Zp = Zi/phi`` ([8], equation 27). The
+        model has no viscous losses, so the resistance comes from a fabric (``porous_facing_layer`` with
+        ``in_contact=True``) or a porous layer behind the plate. [8] assumes a low open area and holes small compared
+        with the wavelength, and applies the design to panels thicker than about 9-10 mm. The cone angle is limited to
+        about 30 degrees ([4], section 5.2.5.2). The method takes it as the half-angle and warns above it.
+
+        ``exit_radiation`` sets the medium the exit mouths radiate into. ``"air"`` is equation 9 of [8]. With
+        ``"porous"``, the ``porous_layer`` behind the plate replaces the air, and
+        ``Zb = (Zc/(rho0*c0))*Zpiston(2*kc*b)``, where ``Zpiston`` is the piston expression above and ``Zc`` and ``kc``
+        are that layer's characteristic impedance and wavenumber. Kirby and Cummings [9], equation 18, citing Ingard and
+        Bolt, obtain the mass end correction next to a porous medium by this substitution; applying it to the full
+        piston impedance is a package extension. They also find that, in most cases, it over-predicts the measured end
+        correction. ``"mean"`` averages the ``"air"`` and ``"porous"`` values, the empirical choice of [4], sections
+        5.2.4.3 and 5.2.5.2. The ``porous_layer`` must follow the plate directly or follow an in-contact facing on the
+        exit face, and ``compute()`` raises otherwise.
+
         If ``open_area`` is not supplied, the method assumes a square pitch and computes ``phi = pi*d**2/(4*s**2)``. If
         ``open_area`` is supplied, ``s`` is replaced by the equivalent square pitch for metadata.
 
@@ -2630,15 +2854,17 @@ class TMM:
         A ``porous_facing_layer`` with ``in_contact=True`` directly before or after the plate adds its sheet impedance
         ``Zf`` to the aperture impedance as ``Zf/phi``, before the plate mass is coupled (see ``porous_facing_layer``).
         ``method="eq_fluid"`` has no plate-mass branch, so there ``Zf/phi`` is a pressure jump at the face of the holes
-        on the side of the sheet.
+        on the side of the sheet. With ``method="conical"``, a sheet after the plate acts as ``Zf/phi_exit`` with the
+        exit open area ``phi_exit = phi*(d_exit/d)**2``, which is ``q*Zf/phi`` with ``q = (d/d_exit)**2`` of [8],
+        equation 27.
 
         If ``rho`` is supplied, the mechanical loss resistance ``r_m`` (``mechanical_resistance``) is added in series
         with the plate mass. The plate branch becomes ``r_m*rho0*c0 + 1j*omega*rho*t*(1 - phi)``, or
-        ``r_m*rho0*c0 + 1j*omega*rho*t`` for ``method="bessel_ingard"``. ``r_m`` enters as ``r'`` in the membrane branch
-        of Kang and Fuchs [5], equations 1 and 9, where it mainly reflects mounting losses; the ``(1 - phi)`` weighting
-        is the package convention named above. It damps only the plate motion, not the flow through the holes. It
-        matters for light sheets and textiles, and near the resonance of the plate mass with the layers behind it.
-        ``method="eq_fluid"`` does not accept it.
+        ``r_m*rho0*c0 + 1j*omega*rho*t`` for ``method="bessel_ingard"`` and ``r_m*rho0*c0 + 1j*omega*rho*t*(1 - phi_m)``
+        for ``method="conical"``. ``r_m`` enters as ``r'`` in the membrane branch of Kang and Fuchs [5], equations 1 and
+        9, where it mainly reflects mounting losses; the ``(1 - phi)`` weighting is the package convention named above.
+        It damps only the plate motion, not the flow through the holes. It matters for light sheets and textiles, and
+        near the resonance of the plate mass with the layers behind it. ``method="eq_fluid"`` does not accept it.
 
         Parameters
         ----------
@@ -2654,15 +2880,17 @@ class TMM:
         rho : float, int or None, optional
             Plate density [kg/m3]. If ``None`` is passed, a fully rigid plate is assumed. If supplied,
             ``method="bessel_ingard"`` uses the full-surface mass ``1j*omega*rho*t`` while ``method="barrier"`` and
-            ``method="barrier_mpp"`` use the solid-fraction mass ``1j*omega*rho*t*(1 - phi)``.
+            ``method="barrier_mpp"`` use the solid-fraction mass ``1j*omega*rho*t*(1 - phi)``. ``method="conical"`` uses
+            ``1j*omega*rho*t*(1 - phi_m)`` with the mean open area through the plate
+            ``phi_m = phi*(1 + d_exit/d + (d_exit/d)**2)/3``, a package extension.
         end_correction : string or None, optional
             End-correction model. Options are ``"ingard"``, ``"jb"`` / ``"jaouen_becot"``, ``"nesterov"``, and
             ``"beranek"``. If ``None``, ``method="bessel_ingard"`` uses ``"ingard"`` and ``method="barrier"`` and
             ``method="eq_fluid"`` use ``"jb"``. ``method="barrier_mpp"`` accepts only ``"maa1998"`` (default) and
-            ``"maa1987"``.
+            ``"maa1987"``. ``method="conical"`` takes none.
         method : string, optional
             Chooses the perforated-plate formulation. Available options are ``"barrier"``, ``"barrier_mpp"``,
-            ``"eq_fluid"``, and ``"bessel_ingard"``.
+            ``"eq_fluid"``, ``"bessel_ingard"``, and ``"conical"``.
         porous_contact : float, optional
             Porous-contact factor ``K`` from 0 to 1. ``0`` disables the term. Only ``method="barrier"`` and
             ``method="bessel_ingard"`` accept a nonzero value. ``compute()`` warns when a nonzero value has no
@@ -2672,6 +2900,12 @@ class TMM:
         mechanical_resistance : float, optional
             Mechanical loss resistance ``r_m`` of the plate motion, in series with the plate mass, normalized by
             ``rho0*c0`` [-]. Requires ``rho``; not accepted by ``method="eq_fluid"``.
+        d_exit : float or None, optional
+            Hole diameter on the exit face for ``method="conical"`` [mm]. Must be larger than ``d`` and not larger
+            than ``s``.
+        exit_radiation : string, optional
+            Medium the exit mouths radiate into for ``method="conical"``: ``"air"`` (default), ``"porous"``, or
+            ``"mean"``.
 
         References
         ----------
@@ -2688,12 +2922,29 @@ class TMM:
             pp. 151-154, 1954.
         [7] D.-Y. Maa, "Microperforated-panel wideband absorbers", Noise Control Engineering Journal, vol. 29,
             pp. 77-84, 1987.
+        [8] T. E. Vigran, "Conical apertures in panels; sound transmission and enhanced absorption in resonator
+            systems", Acta Acustica united with Acustica, vol. 90, pp. 1170-1177, 2004.
+        [9] R. Kirby and A. Cummings, "The impedance of perforated plates subjected to grazing gas flow and backed by
+            porous media", Journal of Sound and Vibration, vol. 217, pp. 619-636, 1998.
         """
-        valid_methods = {"barrier", "barrier_mpp", "eq_fluid", "bessel_ingard"}
+        valid_methods = {"barrier", "barrier_mpp", "eq_fluid", "bessel_ingard", "conical"}
         if method not in valid_methods:
-            raise ValueError(
-                "perforated_panel_layer method must be 'barrier', 'barrier_mpp', 'eq_fluid', or 'bessel_ingard'."
-            )
+            raise ValueError("perforated_panel_layer method must be 'barrier', 'barrier_mpp', 'eq_fluid', "
+                             "'bessel_ingard', or 'conical'.")
+        self._validate_exit_radiation(exit_radiation, method)
+        if method == "conical":
+            if d_exit is None:
+                raise ValueError("perforated_panel_layer(method='conical') needs the exit hole diameter d_exit.")
+            if not (np.isfinite(t) and np.isfinite(d) and np.isfinite(d_exit) and t > 0 and d > 0):
+                raise ValueError("perforated_panel_layer(method='conical') needs finite t > 0, d > 0 and d_exit.")
+            if d_exit <= d:
+                raise ValueError("perforated_panel_layer(method='conical') needs d_exit > d: the narrow end of the "
+                                 "holes faces the incident side.")
+            if end_correction is not None:
+                raise ValueError("method='conical' takes no end_correction; its only end term is the exit radiation.")
+            self._warn_cone_angle(t, d, d_exit, "perforated_panel_layer")
+        elif d_exit is not None:
+            raise ValueError("d_exit is only used by method='conical'.")
         self._validate_porous_contact(porous_contact)
         if porous_contact and method not in {"barrier", "bessel_ingard"}:
             raise ValueError("porous_contact is only supported by method='barrier' and method='bessel_ingard'.")
@@ -2708,7 +2959,7 @@ class TMM:
         if uses_end_correction:
             default_end_correction = "ingard" if method == "bessel_ingard" else "jb"
             effective_end_correction = default_end_correction if end_correction is None else end_correction
-        else:
+        elif method == "barrier_mpp":
             # barrier_mpp carries its end corrections inside Maa's resistance and mass factors.
             effective_end_correction = "maa1998" if end_correction is None else end_correction
             if effective_end_correction not in {"maa1998", "maa1987"}:
@@ -2731,6 +2982,8 @@ class TMM:
 
         if open_area > 1:
             raise ValueError("Open area cannot be greater than 1.")
+        if method == "conical" and d_exit > s:
+            raise ValueError("The exit holes of method='conical' overlap: d_exit must not exceed the hole spacing s.")
 
         end_length = None
         t_corr = None
@@ -2842,12 +3095,30 @@ class TMM:
                     Tp = (np.einsum("ijfa,jkfa->ikfa", T_face, Tp) if side < 0
                           else np.einsum("ijfa,jkfa->ikfa", Tp, T_face))
 
+        elif method == "conical":
+            """
+            Conical holes of Vigran (2004): wave solution in the tapered hole, exit radiation, panel equation 27.
+            """
+            ratio = d_exit / d
+            zpp = self._conical_sheet_impedance("hole", layer, t_meters, d_meters / 2, d_exit / 2000, open_area,
+                                                open_area * ratio ** 2, open_area * (1 + ratio + ratio ** 2) / 3,
+                                                exit_radiation, rho, mechanical_resistance)
+            zpp = self._broadcast_to_incidence_angles(zpp / self.s0)
+
+            ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
+            zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
+
+            Tp = np.array([[ones, zpp],
+                           [zeros, ones]])
+
         self.matrix[layer] = {"type": "perforated_panel_layer",
                               "thickness [mm]": t,
                               "hole_diameter [mm]": d,
+                              "exit_hole_diameter [mm]": d_exit,
                               "hole_spacing [mm]": s,
                               "open_area [%]": open_area * 100,
                               "end_correction": effective_end_correction,
+                              "exit_radiation": exit_radiation if method == "conical" else None,
                               "rho [kg/m3]": rho,
                               "method": method,
                               "porous_contact": porous_contact or None,
@@ -2858,19 +3129,21 @@ class TMM:
                               }
 
     def slotted_panel_layer(self, t=19, w=8, s=16, open_area=None, rho=None, method="barrier", porous_contact=0,
-                            layer=None, *, mechanical_resistance=0):
+                            layer=None, *, mechanical_resistance=0, w_exit=None, exit_radiation="air"):
         """
         Add a regular long-slot panel as a lumped transfer-matrix layer.
 
         This method models a plate with infinitely long, periodically spaced slits as a local surface impedance with
-        transfer matrix ``[[1, Zs], [0, 1]]``. The current public implementation supports only ``method="barrier"``.
+        transfer matrix ``[[1, Zs], [0, 1]]``, with ``method="barrier"`` for slits of constant width and
+        ``method="conical"`` for wedge-shaped slits.
 
-        The open-area ratio is ``phi = w/s`` unless ``open_area`` is supplied directly. The slot end correction follows
-        the long-slot expression of Kristiansen and Vigran [1], ``t_eff = t + 2*w*(-1/pi)*log(sin(pi*phi/2))``, and the
-        slot impedance is assembled as ``Zs = (Rp + 1j*omega*rho0*t_eff) / phi``, where
-        ``Rp = 0.5*sqrt(2*eta*rho0*omega)*(4 + 2*t/w)`` represents viscous losses in the slot. If ``rho`` is supplied,
-        the solid-fraction plate mass ``1j*omega*rho*t*(1 - phi)`` is coupled in parallel with the slot impedance, so
-        the mass path scales with the closed area fraction of the sheet.
+        The open-area ratio is ``phi = w/s`` unless ``open_area`` is supplied directly. For ``method="barrier"``, the
+        slot end correction follows the long-slot expression of Kristiansen and Vigran [1],
+        ``t_eff = t + 2*w*(-1/pi)*log(sin(pi*phi/2))``, and the slot impedance is assembled as
+        ``Zs = (Rp + 1j*omega*rho0*t_eff) / phi``, where ``Rp = 0.5*sqrt(2*eta*rho0*omega)*(4 + 2*t/w)`` represents
+        viscous losses in the slot. If ``rho`` is supplied, the solid-fraction plate mass ``1j*omega*rho*t*(1 - phi)``
+        is coupled in parallel with the slot impedance, so the mass path scales with the closed area fraction of the
+        sheet.
 
         With ``porous_contact`` set to ``K > 0``, the resistance ``K*sigma*delta`` is added to ``Rp``, where
         ``delta = -(w/pi)*log(sin(pi*phi/2))`` is the one-side end correction and ``sigma`` sums the flow resistivity
@@ -2887,6 +3160,39 @@ class TMM:
         ``(1 - phi)`` weighting is this layer's solid-fraction mass described above. It damps only the plate motion, not
         the flow through the slots.
 
+        ``method="conical"`` implements the wedge-shaped slots of Vigran [5], the slots of a panel of beams with a
+        trapezoidal cross-section ([3], section 5.2.4.3). The slot width grows from ``w`` on the incident face to
+        ``w_exit`` on the other face, so the narrow end must face the incident side. The air in the slot carries
+        cylindrical waves from the virtual apex of the wedge, which lies ``x1 = a*t/(b - a)`` before the entrance and
+        ``x2 = b*t/(b - a)`` before the exit for the half-widths ``a = w/2`` and ``b = w_exit/2``. The exit mouth
+        radiates as a baffled strip,
+
+        ``Zb = 2*k*b*(H0(2*k*b) + (pi/2)*(H1(2*k*b)*S0(2*k*b) - H0(2*k*b)*S1(2*k*b))) - H1(2*k*b) + 2j/(pi*2*k*b)``,
+
+        normalized by ``rho0*c0``, with Hankel functions of the second kind ``H0`` and ``H1`` and Struve functions
+        ``S0`` and ``S1`` ([5], equation 20). With Hankel functions of the first kind ``G0`` and ``G1``, the exit rows
+        of [5], equation 23, fix the ratio of the backward and forward waves,
+
+        ``r = (1j*H0(k*x2) - Zb*H1(k*x2))/(1j*G0(k*x2) - Zb*G1(k*x2))``,
+
+        and equation 25 gives the input impedance at the entrance mouth,
+
+        ``Zi = 1j*rho0*c0*(H0(k*x1) - r*G0(k*x1))/(H1(k*x1) - r*G1(k*x1))``.
+
+        The sheet impedance is ``Zs = Zi/phi``; [5] gives equation 27 for holes and states that the slot form follows
+        from it. The model has no viscous losses, so the resistance comes from a fabric or a porous layer behind the
+        plate. The wedge angle is limited to about 30 degrees ([3], section 5.2.4.3). The method takes it as the
+        half-angle and warns above it.
+
+        ``exit_radiation`` works as in ``perforated_panel_layer``. ``"porous"`` evaluates the strip impedance with the
+        characteristic impedance and wavenumber of the ``porous_layer`` behind the plate. This is the substitution of
+        Kirby and Cummings [6], equation 18, citing Ingard and Bolt, applied to the full strip impedance as a package
+        extension. ``"mean"`` averages it with ``"air"`` ([3], section 5.2.4.3). A ``porous_facing_layer`` with
+        ``in_contact=True`` acts as ``Zf/phi`` before the plate and as ``Zf/phi_exit`` after it, with
+        ``phi_exit = w_exit/s``. If ``rho`` is supplied, the plate branch is
+        ``r_m*rho0*c0 + 1j*omega*rho*t*(1 - phi_m)`` with the mean open area ``phi_m = (w + w_exit)/(2*s)``, a package
+        extension.
+
         Parameters
         ----------
         t : float or int, optional
@@ -2900,17 +3206,25 @@ class TMM:
             the equivalent spacing is calculated and stored.
         rho : float, int or None, optional
             Plate density [kg/m3]. If ``None`` is passed, a fully rigid plate is assumed. If supplied, the
-            solid-fraction mass ``1j*omega*rho*t*(1 - phi)`` is coupled in parallel with the slot impedance.
+            solid-fraction mass ``1j*omega*rho*t*(1 - phi)`` is coupled in parallel with the slot impedance, or
+            ``1j*omega*rho*t*(1 - phi_m)`` for ``method="conical"``.
         method : string, optional
-            Slotted-panel calculation method. Only ``"barrier"`` is supported.
+            Slotted-panel calculation method: ``"barrier"`` or ``"conical"``.
         porous_contact : float, optional
-            Porous-contact factor ``K`` from 0 to 1. ``0`` disables the term. ``compute()`` warns when a nonzero
-            value has no ``porous_layer`` directly before or after the sheet, since the term is then zero.
+            Porous-contact factor ``K`` from 0 to 1. ``0`` disables the term. Only ``method="barrier"`` accepts a
+            nonzero value. ``compute()`` warns when a nonzero value has no ``porous_layer`` directly before or after the
+            sheet, since the term is then zero.
         layer : None or int, optional
             Optional layer index. If ``None``, the layer is appended.
         mechanical_resistance : float, optional
             Mechanical loss resistance ``r_m`` of the plate motion, in series with the plate mass, normalized by
             ``rho0*c0`` [-]. Requires ``rho``.
+        w_exit : float or None, optional
+            Slit width on the exit face for ``method="conical"`` [mm]. Must be larger than ``w`` and not larger than
+            ``s``.
+        exit_radiation : string, optional
+            Medium the exit mouths radiate into for ``method="conical"``: ``"air"`` (default), ``"porous"``, or
+            ``"mean"``.
 
         References
         ----------
@@ -2921,9 +3235,28 @@ class TMM:
         [3] T. E. Vigran, "Manual for NorFLAG, version 4.0", Trondheim, 2018.
         [4] J. Kang and H. V. Fuchs, "Predicting the absorption of open weave textiles and micro-perforated
             membranes backed by an air space", Journal of Sound and Vibration, vol. 220, pp. 905-920, 1999.
+        [5] T. E. Vigran, "Conical apertures in panels; sound transmission and enhanced absorption in resonator
+            systems", Acta Acustica united with Acustica, vol. 90, pp. 1170-1177, 2004.
+        [6] R. Kirby and A. Cummings, "The impedance of perforated plates subjected to grazing gas flow and backed by
+            porous media", Journal of Sound and Vibration, vol. 217, pp. 619-636, 1998.
         """
-        if method != "barrier":
-            raise ValueError("slotted_panel_layer method must be 'barrier'.")
+        if method not in {"barrier", "conical"}:
+            raise ValueError("slotted_panel_layer method must be 'barrier' or 'conical'.")
+        self._validate_exit_radiation(exit_radiation, method)
+        if method == "conical":
+            if w_exit is None:
+                raise ValueError("slotted_panel_layer(method='conical') needs the exit slot width w_exit.")
+            if not (np.isfinite(t) and np.isfinite(w) and np.isfinite(w_exit) and t > 0 and w > 0):
+                raise ValueError("slotted_panel_layer(method='conical') needs finite t > 0, w > 0 and w_exit.")
+            if w_exit <= w:
+                raise ValueError("slotted_panel_layer(method='conical') needs w_exit > w: the narrow end of the slots "
+                                 "faces the incident side.")
+            if porous_contact:
+                raise ValueError("porous_contact is only supported by method='barrier'; method='conical' takes the "
+                                 "porous layer behind the plate through exit_radiation.")
+            self._warn_cone_angle(t, w, w_exit, "slotted_panel_layer")
+        elif w_exit is not None:
+            raise ValueError("w_exit is only used by method='conical'.")
         self._validate_porous_contact(porous_contact)
         self._validate_mechanical_resistance(mechanical_resistance, rho)
         if layer is None:
@@ -2941,18 +3274,28 @@ class TMM:
         if open_area > 1:
             raise ValueError("Slit spacing must be larger than slit width.")
 
-        end_length = w_meters * (-1 / np.pi) * np.log(np.sin(0.5 * np.pi * open_area))  # One side
-        t_corr = t_meters + 2 * end_length
-        contact_resistance = self._porous_contact_resistance(layer, porous_contact, end_length)
-        facing_impedance = self._contact_facing_impedance(layer)
-        vis = self.air_prop["air_viscosity"]
-        Rp = 0.5 * np.sqrt(2 * vis * self.rho0 * self.w0) * (4 + (2 * t) / w) + contact_resistance
-        Xp = self.rho0 * t_corr
-        zs = (Rp + 1j * self.w0 * Xp + facing_impedance) / open_area
-        if rho:
-            # Specific impedance of the plate motion: mechanical loss resistance and solid-fraction mass
-            mip = mechanical_resistance * self.rho0 * self.c0 + 1j * self.w0 * rho * t_meters * (1 - open_area)
-            zs = 1 / (1 / zs + 1 / mip)
+        contact_resistance = 0.0
+        if method == "conical":
+            # Wedge-shaped slots of Vigran (2004): wave solution in the slot, exit strip radiation, equation 27.
+            if w_exit > s:
+                raise ValueError("Slit spacing must not be smaller than the exit slot width.")
+            ratio = w_exit / w
+            zs = self._conical_sheet_impedance("slot", layer, t_meters, w_meters / 2, w_exit / 2000, open_area,
+                                               open_area * ratio, open_area * (1 + ratio) / 2, exit_radiation, rho,
+                                               mechanical_resistance)
+        else:
+            end_length = w_meters * (-1 / np.pi) * np.log(np.sin(0.5 * np.pi * open_area))  # One side
+            t_corr = t_meters + 2 * end_length
+            contact_resistance = self._porous_contact_resistance(layer, porous_contact, end_length)
+            facing_impedance = self._contact_facing_impedance(layer)
+            vis = self.air_prop["air_viscosity"]
+            Rp = 0.5 * np.sqrt(2 * vis * self.rho0 * self.w0) * (4 + (2 * t) / w) + contact_resistance
+            Xp = self.rho0 * t_corr
+            zs = (Rp + 1j * self.w0 * Xp + facing_impedance) / open_area
+            if rho:
+                # Specific impedance of the plate motion: mechanical loss resistance and solid-fraction mass
+                mip = mechanical_resistance * self.rho0 * self.c0 + 1j * self.w0 * rho * t_meters * (1 - open_area)
+                zs = 1 / (1 / zs + 1 / mip)
         zs = zs / self.s0
 
         zs = self._broadcast_to_incidence_angles(zs)
@@ -2966,8 +3309,10 @@ class TMM:
         self.matrix[layer] = {"type": "slotted_panel_layer",
                               "thickness [mm]": t,
                               "slot_width [mm]": w,
+                              "exit_slot_width [mm]": w_exit,
                               "slot_spacing [mm]": s,
                               "open_area [%]": open_area * 100,
+                              "exit_radiation": exit_radiation if method == "conical" else None,
                               "rho [kg/m3]": rho,
                               "method": method,
                               "porous_contact": porous_contact or None,
@@ -3681,10 +4026,16 @@ class TMM:
         # lies on the rigid wall. Layers may be added in any order, so these are rebuilt here against the final stack.
         self._build_backing = backing
         contact_plates = self._contact_facing_plates()
+        for key, record in self.matrix.items():
+            if (isinstance(record, dict) and record.get("exit_radiation") in {"porous", "mean"}
+                    and self._exit_porous_layer(key) is None):
+                raise ValueError(f"Layer {key} ({record['type']}) has exit_radiation={record['exit_radiation']!r} but "
+                                 "no porous_layer directly after it or after its in-contact facing.")
         for key, record in list(self.matrix.items()):
             # A plate that folded in a facing at an earlier compute() is rebuilt too, in case that facing has gone.
             if isinstance(record, dict) and (record.get("porous_contact") or record.get("model") == "double_porosity"
-                                             or key in contact_plates or record.get("contact_facing")):
+                                             or key in contact_plates or record.get("contact_facing")
+                                             or record.get("exit_radiation") in {"porous", "mean"}):
                 self._add_layer_from_record(key, record)
         for key, record in self.matrix.items():
             if isinstance(record, dict) and record.get("porous_contact") and not any(
@@ -3859,6 +4210,13 @@ class TMM:
 
     def _add_layer_from_record(self, key, value):
         """Re-create one stored layer at ``key`` from its ``self.matrix`` metadata."""
+        # The record holds checked values, so a cone-angle warning was already given when the layer was made.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=r".*method='conical'\): the aperture half-angle")
+            self._add_layer_from_record_inner(key, value)
+
+    def _add_layer_from_record_inner(self, key, value):
+        """Re-create one stored layer at ``key``; see ``_add_layer_from_record``."""
         if value["type"] == "porous_layer":
             # The record holds the resolved values, so any preset override was already reported when it was made.
             with warnings.catch_warnings():
@@ -3893,7 +4251,9 @@ class TMM:
                                         method=value["method"],
                                         porous_contact=value.get("porous_contact") or 0,
                                         layer=key,
-                                        mechanical_resistance=value.get("mechanical_resistance [-]") or 0)
+                                        mechanical_resistance=value.get("mechanical_resistance [-]") or 0,
+                                        d_exit=value.get("exit_hole_diameter [mm]"),
+                                        exit_radiation=value.get("exit_radiation") or "air")
         elif value["type"] == "slotted_panel_layer":
             self.slotted_panel_layer(t=value["thickness [mm]"],
                                      w=value["slot_width [mm]"],
@@ -3902,7 +4262,9 @@ class TMM:
                                      method=value["method"],
                                      porous_contact=value.get("porous_contact") or 0,
                                      layer=key,
-                                     mechanical_resistance=value.get("mechanical_resistance [-]") or 0)
+                                     mechanical_resistance=value.get("mechanical_resistance [-]") or 0,
+                                     w_exit=value.get("exit_slot_width [mm]"),
+                                     exit_radiation=value.get("exit_radiation") or "air")
         elif value["type"] == "rectangular_slot_layer":
             self._check_record_supported(value)
             self.rectangular_slot_layer(t=value["thickness [mm]"],
@@ -4015,7 +4377,7 @@ class TMM:
             optional_constructor_args += f", srad={self.srad!r}"
         if self._freq is None:
             preamble = []
-            grid_args = f"fmin={self.fmin}, fmax={self.fmax}, df={self.df:0.2f}, "
+            grid_args = f"fmin={self.fmin}, fmax={self.fmax}, df={self._log_number(self.df)}, "
         else:
             preamble = ["import numpy as np"]
             grid_args = f"freq={self._describe_frequency_vector()}, "
@@ -4046,18 +4408,18 @@ class TMM:
                         optional_args += f", tortuosity={value['tortuosity']}"
                     for arg, record_key in POROUS_LOG_KEYS:
                         if value.get(record_key) is not None:
-                            optional_args += f", {arg}={value[record_key]!r}"
+                            optional_args += f", {arg}={self._log_number(value[record_key])}"
                     if value.get("frame", "rigid") != "rigid":
                         optional_args += f", frame={value['frame']!r}"
                     logged_calls.append(
                         f"{self.filename}.porous_layer("
                         f"model='{value['model']}', "
-                        f"t={value['thickness [mm]']:0.1f}, "
+                        f"t={float(value['thickness [mm]'])!r}, "
                         f"sigma={value['flow_resistivity [k*Pa*s/m²]']}"
                         f"{optional_args})"
                         )
                 elif value["type"] == "air_layer":
-                    logged_calls.append(f"{self.filename}.air_layer(t={value['thickness [mm]']:0.1f})")
+                    logged_calls.append(f"{self.filename}.air_layer(t={float(value['thickness [mm]'])!r})")
                 elif value["type"] == "perforated_panel_layer":
                     contact_arg = f", porous_contact={value['porous_contact']}" if value.get("porous_contact") else ""
                     end_correction_arg = ""
@@ -4068,39 +4430,41 @@ class TMM:
                         end_correction_arg = "end_correction='maa1987', "
                     logged_calls.append(
                         f"{self.filename}.perforated_panel_layer("
-                        f"t={value['thickness [mm]']:0.1f}, "
-                        f"d={value['hole_diameter [mm]']:0.1f}, "
-                        f"s={value['hole_spacing [mm]']:0.1f}, "
+                        f"t={float(value['thickness [mm]'])!r}, "
+                        f"d={float(value['hole_diameter [mm]'])!r}, "
+                        f"s={float(value['hole_spacing [mm]'])!r}, "
                         f"{end_correction_arg}"
                         f"rho={value['rho [kg/m3]']}, "
                         f"method='{value['method']}'"
                         f"{contact_arg}"
                         f"{self._mechanical_resistance_arg(value)}"
+                        f"{self._conical_args(value, 'd_exit', 'exit_hole_diameter [mm]')}"
                         f")"
                         )
                 elif value["type"] == "slotted_panel_layer":
                     contact_arg = f", porous_contact={value['porous_contact']}" if value.get("porous_contact") else ""
                     logged_calls.append(
                         f"{self.filename}.slotted_panel_layer("
-                        f"t={value['thickness [mm]']:0.1f}, "
-                        f"w={value['slot_width [mm]']:0.1f}, "
-                        f"s={value['slot_spacing [mm]']:0.1f}, "
+                        f"t={float(value['thickness [mm]'])!r}, "
+                        f"w={float(value['slot_width [mm]'])!r}, "
+                        f"s={float(value['slot_spacing [mm]'])!r}, "
                         f"rho={value['rho [kg/m3]']}, "
                         f"method='{value['method']}'"
                         f"{contact_arg}"
                         f"{self._mechanical_resistance_arg(value)}"
+                        f"{self._conical_args(value, 'w_exit', 'exit_slot_width [mm]')}"
                         f")"
                         )
                 elif value["type"] == "rectangular_slot_layer":
                     contact_arg = f", porous_contact={value['porous_contact']}" if value.get("porous_contact") else ""
                     logged_calls.append(
                         f"{self.filename}.rectangular_slot_layer("
-                        f"t={value['thickness [mm]']!r}, "
-                        f"w={value['slot_width [mm]']!r}, "
-                        f"l={value['slot_length [mm]']!r}, "
-                        f"sw={value['slot_spacing_width [mm]']!r}, "
-                        f"sl={value['slot_spacing_length [mm]']!r}, "
-                        f"rho={value['rho [kg/m3]']!r}"
+                        f"t={self._log_number(value['thickness [mm]'])}, "
+                        f"w={self._log_number(value['slot_width [mm]'])}, "
+                        f"l={self._log_number(value['slot_length [mm]'])}, "
+                        f"sw={self._log_number(value['slot_spacing_width [mm]'])}, "
+                        f"sl={self._log_number(value['slot_spacing_length [mm]'])}, "
+                        f"rho={self._log_number(value['rho [kg/m3]'])}"
                         f"{contact_arg}"
                         f"{self._mechanical_resistance_arg(value)}"
                         f")"
@@ -4108,7 +4472,7 @@ class TMM:
                 elif value["type"] == "membrane_layer":
                     logged_calls.append(
                         f"{self.filename}.membrane_layer("
-                        f"t={value['thickness [mm]']:0.1f}, "
+                        f"t={float(value['thickness [mm]'])!r}, "
                         f"rho={value['density [kg/m³]']}"
                         f"{self._mechanical_resistance_arg(value)}"
                         f")"
@@ -4117,7 +4481,7 @@ class TMM:
                     free_arg = f", free={value['free']}" if "free" in value else ""
                     logged_calls.append(
                         f"{self.filename}.porous_facing_layer("
-                        f"t={value['thickness [mm]']:0.1f}, "
+                        f"t={float(value['thickness [mm]'])!r}, "
                         f"surface_mass={value['surface_mass [kg/m2]']}, "
                         f"resistance={value['resistance [Pa*s/m]']}, "
                         f"porosity={value['porosity']}, "
@@ -4128,7 +4492,9 @@ class TMM:
                         f")"
                         )
             else:
-                logged_calls.append(f"{self.filename}.material_model('{value['type']}', params={value['params']})")
+                params = ", ".join(f"{name!r}: {self._log_number(item, keep_int=True)}"
+                                   for name, item in value["params"].items())
+                logged_calls.append(f"{self.filename}.material_model('{value['type']}', params={{{params}}})")
 
         backing_data = self._backing_record(matrix)[1]
         if backing_data is not None:
@@ -4155,10 +4521,37 @@ class TMM:
         return logged_calls
 
     @staticmethod
+    def _log_number(value, keep_int=False):
+        """
+        Return ``value`` as Python source for ``log_rebuild()``.
+
+        NumPy scalars and 0-d arrays become plain Python values, real numbers are written as floats (``float('nan')``
+        and ``float('inf')`` for non-finite ones), and anything else uses ``repr``. With ``keep_int=True`` integers
+        stay integers.
+        """
+        if isinstance(value, np.generic) or (isinstance(value, np.ndarray) and value.ndim == 0):
+            value = value.item()
+        if keep_int and isinstance(value, int) and not isinstance(value, bool):
+            return repr(value)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            value = float(value)
+            return repr(value) if np.isfinite(value) else f"float('{value}')"
+        return repr(value)
+
+    @staticmethod
+    def _conical_args(value, name, key):
+        """Return the ``d_exit``/``w_exit`` and ``exit_radiation`` keywords for ``log_rebuild()``, or ``""``."""
+        if value.get("method") != "conical":
+            return ""
+        radiation = value.get("exit_radiation") or "air"
+        radiation_arg = f", exit_radiation='{radiation}'" if radiation != "air" else ""
+        return f", {name}={TMM._log_number(value[key])}{radiation_arg}"
+
+    @staticmethod
     def _mechanical_resistance_arg(value):
         """Return the ``mechanical_resistance`` keyword for ``log_rebuild()``, or an empty string when unset."""
         resistance = value.get("mechanical_resistance [-]")
-        return f", mechanical_resistance={resistance!r}" if resistance else ""
+        return f", mechanical_resistance={TMM._log_number(resistance)}" if resistance else ""
 
     def print_rebuild(self):
         """Print the calls needed to recreate this object."""
@@ -4230,16 +4623,17 @@ class TMM:
                 "method",
                 "thickness [mm]",
                 "hole_diameter [mm]",
+                "exit_hole_diameter [mm]",
                 "hole_spacing [mm]",
                 "open_area [%]",
             ]
-            keys.append("end_correction")
+            keys.extend(["end_correction", "exit_radiation"])
             keys.extend(["rho [kg/m3]", "mechanical_resistance [-]", "porous_contact",
                          "contact_resistance [Pa*s/m]", "contact_facing"])
         elif layer_type == "slotted_panel_layer":
-            keys = ["type", "method", "thickness [mm]", "slot_width [mm]", "slot_spacing [mm]", "open_area [%]",
-                    "rho [kg/m3]", "mechanical_resistance [-]", "porous_contact", "contact_resistance [Pa*s/m]",
-                    "contact_facing"]
+            keys = ["type", "method", "thickness [mm]", "slot_width [mm]", "exit_slot_width [mm]", "slot_spacing [mm]",
+                    "open_area [%]", "exit_radiation", "rho [kg/m3]", "mechanical_resistance [-]", "porous_contact",
+                    "contact_resistance [Pa*s/m]", "contact_facing"]
         elif layer_type == "rectangular_slot_layer":
             keys = ["type", "thickness [mm]", "slot_width [mm]", "slot_length [mm]", "slot_spacing_width [mm]",
                     "slot_spacing_length [mm]", "open_area [%]", "end_correction [mm]", "rho [kg/m3]",
