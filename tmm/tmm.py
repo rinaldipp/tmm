@@ -2161,22 +2161,30 @@ class TMM:
             self._alpha = self.diffuse_absorption_coefficient(self.z_angle)
         self.matrix = {"termination": {"type": "constant_z"}}
 
-    def membrane_layer(self, t=1, rho=8050, layer=None):
+    def membrane_layer(self, t=1, rho=8050, layer=None, *, mechanical_resistance=0):
         """
         Add a limp membrane or mass-sheet layer.
 
         The membrane is modeled as a local pressure-jump impedance with surface mass ``m_s = rho*t`` and specific
-        impedance ``Z_m = 1j*omega*m_s``, where ``t`` is converted from millimeters to meters. The transfer matrix is
-        ``[[1, Z_m/S0], [0, 1]]`` because this class uses pressure and volume velocity as the matrix state; ``S0`` is
-        the front surface area. The resulting surface impedance recovered by ``compute()`` is scaled back to specific
-        impedance.
+        impedance ``Z_m = r_m*rho0*c0 + 1j*omega*m_s``, where ``t`` is converted from millimeters to meters and ``r_m``
+        is the mechanical loss resistance normalized by ``rho0*c0``. The transfer matrix is ``[[1, Z_m/S0], [0, 1]]``
+        because this class uses pressure and volume velocity as the matrix state; ``S0`` is the front surface area. The
+        resulting surface impedance recovered by ``compute()`` is scaled back to specific impedance.
 
-        This is the mass term of the classical limp-membrane absorber model. Brandão, *Acustica de Salas: Projeto e
-        Modelagem*, section 2.3.2, writes ``Z_m = 1j*omega*m_s`` after neglecting membrane resistance and combines it in
-        series with the surface impedance of the backing cavity, which here comes from the layers behind the membrane.
+        With ``r_m = 0`` this is the mass term of the classical limp-membrane absorber model. Brandão [1], section
+        2.3.2, writes ``Z_m = 1j*omega*m_s`` after neglecting membrane resistance and combines it in series with the
+        surface impedance of the backing cavity, which here comes from the layers behind the membrane. Kang and Fuchs
+        [2], equation 1, keep the resistance in the normalized impedance ``z_M = r' + 1j*omega*m'/(rho0*c0)``, where
+        ``r'`` "depends mainly on mounting conditions" and is around 1 in their calculations. Sakagami et al. [3] call
+        it the mechanical loss resistance. ``r_m`` is ``r'``.
 
-        The model neglects bending stiffness, finite-panel modal behavior, edge/support losses, and intrinsic membrane
-        resistance. It is appropriate for a limp local-reaction mass sheet, not a full structural panel model.
+        ``r_m`` is the only loss of the sheet's motion. It sets the height and width of the absorption peak at the
+        resonance of the membrane mass with the layers behind it. At that resonance a membrane over a rigidly backed air
+        space has the impedance ``r_m*rho0*c0``, so ``r_m = 1`` gives the highest peak at normal incidence ([3]).
+        Without it, a membrane over a lossless air space absorbs nothing.
+
+        The model neglects bending stiffness and finite-panel modal behavior. It is appropriate for a limp
+        local-reaction mass sheet, not a full structural panel model.
 
         Parameters
         ----------
@@ -2186,11 +2194,24 @@ class TMM:
             Material density [kg/m³]
         layer : None or int, optional
             Optional layer index. If ``None``, the layer is appended.
+        mechanical_resistance : float, optional
+            Mechanical loss resistance ``r_m`` of the membrane motion, mainly from mounting losses, normalized by
+            ``rho0*c0`` [-].
+
+        References
+        ----------
+        [1] E. Brandão, "Acústica de Salas: Projeto e Modelagem", Blucher, São Paulo, 2018.
+        [2] J. Kang and H. V. Fuchs, "Predicting the absorption of open weave textiles and micro-perforated
+            membranes backed by an air space", Journal of Sound and Vibration, vol. 220, pp. 905-920, 1999.
+        [3] K. Sakagami, M. Morimoto and M. Yairi, "A note on the relationship between the sound absorption by
+            microperforated panels and panel/membrane-type absorbers", Applied Acoustics, vol. 70, pp. 1131-1136, 2009.
         """
+        if mechanical_resistance < 0:
+            raise ValueError("mechanical_resistance must not be negative.")
         # Adjusting units
         t_meters = t / 1000  # Convert millimeters to meters
 
-        zc = 1j * self.w0 * rho * t_meters / self.s0
+        zc = (mechanical_resistance * self.rho0 * self.c0 + 1j * self.w0 * rho * t_meters) / self.s0
         zc = self._broadcast_to_incidence_angles(zc)
 
         ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
@@ -2205,16 +2226,17 @@ class TMM:
         self.matrix[layer] = {"type": "membrane_layer",
                               "thickness [mm]": t,
                               "density [kg/m³]": rho,
+                              "mechanical_resistance [-]": mechanical_resistance or None,
                               "matrix": Tm,
                               }
 
     def porous_facing_layer(self, t=1, surface_mass=None, resistance=None, porosity=0.7, tortuosity=1.0,
                             method="rebillard", free=True, rho=None, d=None, s=None, open_area=None,
-                            layer=None):
+                            layer=None, *, in_contact=False):
         """
         Add a thin porous-facing or fabric sheet as a local pressure-jump layer.
 
-        The layer is represented by a zero-thickness transfer matrix ``[[1, Zs/S0], [0, 1]]``, where ``Zs`` is the
+        The layer is represented by a zero-thickness transfer matrix ``[[1, Zf/S0], [0, 1]]``, where ``Zf`` is the
         specific sheet impedance and ``S0`` is the front surface area used by the volume-velocity matrix state.
 
         ``method="rebillard"`` implements the unbonded thin porous-facing expression from Rebillard et al. [1]. The
@@ -2224,13 +2246,25 @@ class TMM:
 
         ``method="pieren"`` implements the thin woven-fabric sheet impedance described by Pieren [2]. With
         ``free=True``, the sheet resistance and limp surface mass are combined in parallel,
-        ``Zs = 1j*omega*m*R / (1j*omega*m + R)``. With ``free=False``, the motionless fabric limit ``Zs = R`` is used.
+        ``Zf = 1j*omega*m*R / (1j*omega*m + R)``. With ``free=False``, the motionless fabric limit ``Zf = R`` is used.
         The aliases ``method="pieren_free"`` and ``method="pieren_fixed"`` set this option explicitly.
 
         Measured ``surface_mass`` and ``resistance`` are preferred for real fabrics. If ``surface_mass`` is ``None`` and
         ``rho`` is supplied, it is estimated as ``rho*t``; if ``resistance`` is ``None``, it is estimated from the ideal
         circular-pore expression ``32*eta*t/(open_area*d**2)``. For ``method="rebillard"``, omitting both uses a nominal
         thin facing with ``surface_mass=0.25`` kg/m2 and ``resistance=200`` Pa*s/m.
+
+        By default the sheet acts at the mean surface velocity. This describes a sheet further than about one hole
+        diameter from the openings of a perforated plate, as in Cox and D'Antonio [3], equation 7.18. A sheet in contact
+        with the plate, within about one hole diameter of the openings ([3], section 7.3.3.1), carries the flow through
+        the openings only. Its impedance then acts as ``Zf/phi`` for open-area ratio ``phi`` ([3], equation 7.17; Vigran
+        [4], section 5.4.1.5, for a fabric in contact with the panel).
+
+        With ``in_contact=True`` the layer's own matrix is the identity, and ``compute()`` adds ``Zf`` to the opening
+        branch of the plate directly before or after it: ``perforated_panel_layer``, ``slotted_panel_layer`` or
+        ``rectangular_slot_layer``. There ``Zf/phi`` enters before any plate-mass coupling. [3] and [4] give the
+        resistance part; dividing the full sheet impedance, mass included, by ``phi`` is a package extension.
+        ``compute()`` raises if no such plate lies next to the sheet or if plates lie on both sides.
 
         Parameters
         ----------
@@ -2259,6 +2293,9 @@ class TMM:
             Open-area ratio used for the geometric resistance estimate.
         layer : None or int, optional
             Optional layer index. If ``None``, the layer is appended.
+        in_contact : bool, optional
+            If ``True``, the sheet rests on the plate directly before or after it, within about one hole diameter of its
+            openings, and acts at the opening velocity, as described above.
 
         References
         ----------
@@ -2267,6 +2304,9 @@ class TMM:
             Journal of Sound and Vibration, vol. 156, pp. 541-555, 1992.
         [2] R. Pieren, "Sound absorption modeling of thin woven fabrics backed by an air cavity", Textile Research
             Journal, vol. 82, pp. 864-874, 2012.
+        [3] T. J. Cox and P. D'Antonio, "Acoustic Absorbers and Diffusers: Theory, Design and Application", 3rd ed.,
+            CRC Press, 2017.
+        [4] T. E. Vigran, "Building Acoustics", Taylor & Francis, 2008.
         """
         method = method.lower()
         if method == "pieren_free":
@@ -2315,13 +2355,8 @@ class TMM:
             raise ValueError("Facing resistance cannot be negative.")
 
         if method == "pieren":
-            if free:
-                if surface_mass is None:
-                    raise ValueError("surface_mass or rho must be supplied for a free Pieren fabric.")
-                jw_mass = 1j * self.w0 * surface_mass
-                z_sheet = jw_mass * resistance / (jw_mass + resistance)
-            else:
-                z_sheet = np.full_like(self.freq, resistance, dtype=complex)
+            if free and surface_mass is None:
+                raise ValueError("surface_mass or rho must be supplied for a free Pieren fabric.")
         else:
             if surface_mass is None:
                 raise ValueError("surface_mass or rho must be supplied for the Rebillard porous-facing model.")
@@ -2330,22 +2365,18 @@ class TMM:
             if tortuosity <= 0:
                 raise ValueError("tortuosity must be greater than zero.")
 
-            rho2 = porosity * self.rho0
-            rho_a = (tortuosity - 1.0) * rho2
-            coupling = 1j * self.w0 * rho_a * t_meters + resistance * porosity**2
-            c_term = 1j * self.w0 * rho2 * t_meters + coupling
-            b_term = 1j * self.w0 * surface_mass + coupling
-            denominator = porosity * (coupling * (1.0 - porosity) + b_term * porosity) + (
-                1.0 - porosity
-            ) * (coupling * porosity + c_term * (1.0 - porosity))
-            z_sheet = (c_term * b_term - coupling**2) / denominator
-
-        z_sheet = z_sheet / self.s0
-        z_sheet = self._broadcast_to_incidence_angles(z_sheet)
         ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
         zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
-        Tf = np.array([[ones, z_sheet],
-                       [zeros, ones]])
+        if in_contact:
+            # The sheet acts on the openings of the plate it rests on, which adds it in compute().
+            Tf = np.array([[ones, zeros],
+                           [zeros, ones]])
+        else:
+            z_sheet = self._porous_facing_impedance(t_meters, surface_mass, resistance, porosity, tortuosity, method,
+                                                    free)
+            z_sheet = self._broadcast_to_incidence_angles(z_sheet / self.s0)
+            Tf = np.array([[ones, z_sheet],
+                           [zeros, ones]])
 
         if layer is None:
             layer = len(self.matrix)
@@ -2361,11 +2392,87 @@ class TMM:
                        "pore_diameter [mm]": d,
                        "pore_spacing [mm]": s,
                        "open_area [%]": None if open_area is None else open_area * 100,
+                       "in_contact": True if in_contact else None,
                        "matrix": Tf,
                        }
         if method == "pieren":
             matrix_data["free"] = free
         self.matrix[layer] = matrix_data
+
+    def _porous_facing_impedance(self, t_meters, surface_mass, resistance, porosity, tortuosity, method, free):
+        """
+        Return the specific sheet impedance ``Zf`` [Pa*s/m] of ``porous_facing_layer`` on the frequency grid.
+        """
+        if method == "pieren":
+            if not free:
+                return np.full_like(self.freq, resistance, dtype=complex)
+            jw_mass = 1j * self.w0 * surface_mass
+            return jw_mass * resistance / (jw_mass + resistance)
+        rho2 = porosity * self.rho0
+        rho_a = (tortuosity - 1.0) * rho2
+        coupling = 1j * self.w0 * rho_a * t_meters + resistance * porosity**2
+        c_term = 1j * self.w0 * rho2 * t_meters + coupling
+        b_term = 1j * self.w0 * surface_mass + coupling
+        denominator = porosity * (coupling * (1.0 - porosity) + b_term * porosity) + (
+            1.0 - porosity
+        ) * (coupling * porosity + c_term * (1.0 - porosity))
+        return (c_term * b_term - coupling**2) / denominator
+
+    def _contact_facings(self, layer):
+        """Return ``(side, record)`` for each in-contact ``porous_facing_layer`` directly before (-1) or after (+1)."""
+        found = []
+        for side in (-1, 1):
+            record = self.matrix.get(layer + side)
+            if isinstance(record, dict) and record.get("type") == "porous_facing_layer" and record.get("in_contact"):
+                found.append((side, record))
+        return found
+
+    def _contact_facing_impedance(self, layer, side=None):
+        """
+        Return the summed sheet impedance ``Zf`` [Pa*s/m] of the in-contact facings next to ``layer``, or 0.
+
+        With ``side`` set to -1 or +1, only the facing on that side is included.
+        """
+        total = 0.0
+        for facing_side, record in self._contact_facings(layer):
+            if side is None or side == facing_side:
+                total = total + self._porous_facing_impedance(
+                    record["thickness [mm]"] / 1000, record["surface_mass [kg/m2]"], record["resistance [Pa*s/m]"],
+                    record["porosity"], record["tortuosity"], record["method"], record.get("free", True))
+        return total
+
+    def _contact_facing_plates(self):
+        """
+        Return the keys of the plates that carry an in-contact ``porous_facing_layer``.
+
+        Raises if such a sheet has no plate directly before or after it, or has plates on both sides.
+        """
+        aperture_types = {"perforated_panel_layer", "slotted_panel_layer", "rectangular_slot_layer"}
+        plates = set()
+        for key, record in self.matrix.items():
+            if not (isinstance(record, dict) and record.get("type") == "porous_facing_layer"
+                    and record.get("in_contact")):
+                continue
+            neighbours = [n for n in (key - 1, key + 1)
+                          if isinstance(self.matrix.get(n), dict) and self.matrix[n].get("type") in aperture_types]
+            if not neighbours:
+                raise ValueError(f"Layer {key} is a porous_facing_layer with in_contact=True, but no "
+                                 "perforated_panel_layer, slotted_panel_layer or rectangular_slot_layer lies directly "
+                                 "before or after it.")
+            if len(neighbours) > 1:
+                raise ValueError(f"Layer {key} is a porous_facing_layer with in_contact=True between two plates; place "
+                                 "it directly next to the one plate it rests on.")
+            plates.add(neighbours[0])
+        return plates
+
+    @staticmethod
+    def _validate_mechanical_resistance(mechanical_resistance, rho):
+        """Raise if the mechanical resistance is negative or set on a rigid plate."""
+        if mechanical_resistance < 0:
+            raise ValueError("mechanical_resistance must not be negative.")
+        if mechanical_resistance and not rho:
+            raise ValueError("mechanical_resistance acts on the plate motion and needs rho; a rigid plate does not "
+                             "move.")
 
     @staticmethod
     def _circular_hole_end_length(d_meters, open_area, end_correction):
@@ -2412,12 +2519,14 @@ class TMM:
         return porous_contact * sigma * end_length
 
     def _bessel_ingard_circular_sheet_impedance(self, t_meters, d_meters, open_area, end_length, rho=None,
-                                                resistance=0.0):
+                                                resistance=0.0, mechanical_resistance=0.0):
         """
         Return the local sheet impedance for ``perforated_panel_layer(method="bessel_ingard")``.
 
-        The Bessel short-tube impedance is evaluated over the hole length extended by ``end_length``, the series
-        ``resistance`` [Pa*s/m] is added per hole, and the optional full-surface plate mass is coupled in parallel.
+        The Bessel short-tube impedance is evaluated over the hole length extended by ``end_length``. The series term
+        ``resistance`` [Pa*s/m], the porous-contact resistance plus any in-contact facing impedance and so possibly
+        complex, is added as ``resistance/phi``. The optional full-surface plate mass, with ``mechanical_resistance``
+        (normalized by ``rho0*c0``) in series, is coupled in parallel.
         """
         radius = d_meters / 2
         viscosity = self.air_prop["air_viscosity"]
@@ -2428,13 +2537,13 @@ class TMM:
         z_sheet = z_sheet + resistance / open_area
 
         if rho is not None:
-            plate_mass = 1j * self.w0 * rho * t_meters
+            plate_mass = mechanical_resistance * self.rho0 * self.c0 + 1j * self.w0 * rho * t_meters
             z_sheet = 1 / (1 / z_sheet + 1 / plate_mass)
 
         return z_sheet
 
     def perforated_panel_layer(self, t=19, d=8, s=16, open_area=None, rho=None, end_correction=None, method="barrier",
-                               porous_contact=0, layer=None):
+                               porous_contact=0, layer=None, *, mechanical_resistance=0):
         """
         Add a perforated plate with circular holes as a transfer-matrix layer.
 
@@ -2465,9 +2574,14 @@ class TMM:
         equations 5a, 5b, and 6. Maa writes the impedance normalized by ``rho0*c0``; this method converts it to
         dimensional surface impedance as ``Zp = 32*eta*t*kr/(phi*d**2) + 1j*omega*rho0*t*km/phi``, with
         ``k = d*sqrt(omega*rho0/(4*eta))``, ``kr = sqrt(1 + k**2/32) + sqrt(2)*k*d/(32*t)``, and
-        ``km = 1 + 1/sqrt(1 + k**2/2) + 0.85*d/t``. If ``rho`` is supplied, the solid-fraction plate mass
-        ``1j*omega*rho*t*(1 - phi)`` is added in parallel as a package extension; it is not part of Maa's aperture
-        impedance.
+        ``km = 1 + 1/sqrt(1 + k**2/2) + 0.85*d/t``. ``end_correction="maa1987"`` uses the earlier forms of Maa [7],
+        equations 10 and 11 (in numerical form, equations 13 and 14), ``kr = sqrt(1 + k**2/32) + sqrt(2)*k*d/(8*t)`` and
+        ``km = 1 + 1/sqrt(9 + k**2/2) + 0.85*d/t``, which Kang and Fuchs [5], equations 3-7, also use. The resistive end
+        term ``sqrt(2)*k*d/(32*t)`` adds ``Rs/phi``, with surface resistance ``Rs = 0.5*sqrt(2*eta*rho0*omega)``. The
+        earlier term ``sqrt(2)*k*d/(8*t)`` adds ``4*Rs/phi``, which equals the end resistance
+        ``sqrt(8*eta*rho0*omega)/phi`` of ``method="barrier"`` ([1], equation 7.12). If ``rho`` is supplied, the
+        solid-fraction plate mass ``1j*omega*rho*t*(1 - phi)`` is added in parallel as a package extension; it is not
+        part of Maa's aperture impedance.
 
         ``method="eq_fluid"`` treats each circular hole as a finite viscothermal duct. The circular-pore propagation
         constant and characteristic impedance are returned by ``viscothermal_circular()``; the characteristic impedance
@@ -2513,6 +2627,19 @@ class TMM:
         contact follows [4], section 5.2.4.1. ``compute()`` re-evaluates the term from the neighbours present at that
         time.
 
+        A ``porous_facing_layer`` with ``in_contact=True`` directly before or after the plate adds its sheet impedance
+        ``Zf`` to the aperture impedance as ``Zf/phi``, before the plate mass is coupled (see ``porous_facing_layer``).
+        ``method="eq_fluid"`` has no plate-mass branch, so there ``Zf/phi`` is a pressure jump at the face of the holes
+        on the side of the sheet.
+
+        If ``rho`` is supplied, the mechanical loss resistance ``r_m`` (``mechanical_resistance``) is added in series
+        with the plate mass. The plate branch becomes ``r_m*rho0*c0 + 1j*omega*rho*t*(1 - phi)``, or
+        ``r_m*rho0*c0 + 1j*omega*rho*t`` for ``method="bessel_ingard"``. ``r_m`` enters as ``r'`` in the membrane branch
+        of Kang and Fuchs [5], equations 1 and 9, where it mainly reflects mounting losses; the ``(1 - phi)`` weighting
+        is the package convention named above. It damps only the plate motion, not the flow through the holes. It
+        matters for light sheets and textiles, and near the resonance of the plate mass with the layers behind it.
+        ``method="eq_fluid"`` does not accept it.
+
         Parameters
         ----------
         t : float or int, optional
@@ -2531,7 +2658,8 @@ class TMM:
         end_correction : string or None, optional
             End-correction model. Options are ``"ingard"``, ``"jb"`` / ``"jaouen_becot"``, ``"nesterov"``, and
             ``"beranek"``. If ``None``, ``method="bessel_ingard"`` uses ``"ingard"`` and ``method="barrier"`` and
-            ``method="eq_fluid"`` use ``"jb"``. This argument is ignored by ``method="barrier_mpp"``.
+            ``method="eq_fluid"`` use ``"jb"``. ``method="barrier_mpp"`` accepts only ``"maa1998"`` (default) and
+            ``"maa1987"``.
         method : string, optional
             Chooses the perforated-plate formulation. Available options are ``"barrier"``, ``"barrier_mpp"``,
             ``"eq_fluid"``, and ``"bessel_ingard"``.
@@ -2541,6 +2669,9 @@ class TMM:
             ``porous_layer`` directly before or after the sheet, since the term is then zero.
         layer : None or int, optional
             Optional value to choose the layer level. If None is passed the layer will be added to the existing ones.
+        mechanical_resistance : float, optional
+            Mechanical loss resistance ``r_m`` of the plate motion, in series with the plate mass, normalized by
+            ``rho0*c0`` [-]. Requires ``rho``; not accepted by ``method="eq_fluid"``.
 
         References
         ----------
@@ -2555,6 +2686,8 @@ class TMM:
             membranes backed by an air space", Journal of Sound and Vibration, vol. 220, pp. 905-920, 1999.
         [6] U. Ingard, "Perforated facing and sound absorption", Journal of the Acoustical Society of America, vol. 26,
             pp. 151-154, 1954.
+        [7] D.-Y. Maa, "Microperforated-panel wideband absorbers", Noise Control Engineering Journal, vol. 29,
+            pp. 77-84, 1987.
         """
         valid_methods = {"barrier", "barrier_mpp", "eq_fluid", "bessel_ingard"}
         if method not in valid_methods:
@@ -2564,6 +2697,9 @@ class TMM:
         self._validate_porous_contact(porous_contact)
         if porous_contact and method not in {"barrier", "bessel_ingard"}:
             raise ValueError("porous_contact is only supported by method='barrier' and method='bessel_ingard'.")
+        self._validate_mechanical_resistance(mechanical_resistance, rho)
+        if mechanical_resistance and method == "eq_fluid":
+            raise ValueError("mechanical_resistance needs a plate-mass branch, which method='eq_fluid' does not have.")
         if layer is None:
             layer = len(self.matrix)
 
@@ -2572,12 +2708,12 @@ class TMM:
         if uses_end_correction:
             default_end_correction = "ingard" if method == "bessel_ingard" else "jb"
             effective_end_correction = default_end_correction if end_correction is None else end_correction
-        elif end_correction is not None:
-            warnings.warn(
-                f"end_correction is ignored for perforated_panel_layer(method='{method}'); "
-                "the selected method defines its end correction internally.",
-                stacklevel=2,
-            )
+        else:
+            # barrier_mpp carries its end corrections inside Maa's resistance and mass factors.
+            effective_end_correction = "maa1998" if end_correction is None else end_correction
+            if effective_end_correction not in {"maa1998", "maa1987"}:
+                raise ValueError("perforated_panel_layer(method='barrier_mpp') end_correction must be 'maa1998' or "
+                                 f"'maa1987', not {end_correction!r}.")
 
         # Adjusting units
         t_meters = t / 1000  # Convert millimeters to meters
@@ -2602,6 +2738,8 @@ class TMM:
             end_length = self._circular_hole_end_length(d_meters, open_area, effective_end_correction)
             t_corr = t_meters + end_length
         contact_resistance = self._porous_contact_resistance(layer, porous_contact, (end_length or 0.0) / 2)
+        facing_impedance = self._contact_facing_impedance(layer)
+        contact_facing = bool(self._contact_facings(layer))
         vis = self.air_prop["air_viscosity"]
 
         Tp = None
@@ -2617,9 +2755,10 @@ class TMM:
             rm = (1 / open_area) * np.sqrt(8 * vis * self.rho0 * self.w0) * (
                         1 + t_meters / (d_meters))  # Surface resistance
             zpp = (1j / open_area) * t_corr * self.w0 * self.rho0 + rm  # Impedance of perforated plate
-            zpp = zpp + contact_resistance / open_area
+            zpp = zpp + (contact_resistance + facing_impedance) / open_area
             if rho:
-                mip = 1j * self.w0 * rho * t_meters * (1 - open_area)  # Specific mass impedance of the plate
+                # Specific impedance of the plate motion: mechanical loss resistance and solid-fraction mass
+                mip = mechanical_resistance * self.rho0 * self.c0 + 1j * self.w0 * rho * t_meters * (1 - open_area)
                 zpp = 1 / (1 / zpp + 1 / mip)
             zpp = zpp / self.s0
             zpp = self._broadcast_to_incidence_angles(zpp)
@@ -2638,14 +2777,17 @@ class TMM:
             the acoustic mass term is multiplied by ``rho0`` rather than divided by ``c0``.
             """
             cis = d_meters * np.sqrt(self.w0 * self.rho0 / (4 * vis))
-            kr = np.sqrt(1 + cis ** 2 / 32) + np.sqrt(2) / 32 * cis * d_meters / t_meters
+            maa1987 = effective_end_correction == "maa1987"
+            # Resistive end term: sqrt(2)/32 (Maa 1998, one surface resistance) or sqrt(2)/8 (Maa 1987, four)
+            kr = np.sqrt(1 + cis ** 2 / 32) + np.sqrt(2) / (8 if maa1987 else 32) * cis * d_meters / t_meters
             rm = 32 * vis / open_area * t_meters / d_meters ** 2 * kr
-            km = 1 + 1 / np.sqrt(1 + cis ** 2 / 2) + 0.85 * d_meters / t_meters
+            km = 1 + 1 / np.sqrt((9 if maa1987 else 1) + cis ** 2 / 2) + 0.85 * d_meters / t_meters
             m = self.rho0 * t_meters / open_area * km
 
-            zpp = rm + 1j * self.w0 * m
+            zpp = rm + 1j * self.w0 * m + facing_impedance / open_area
             if rho:
-                mip = 1j * self.w0 * rho * t_meters * (1 - open_area)  # Specific mass impedance of the plate
+                # Specific impedance of the plate motion: mechanical loss resistance and solid-fraction mass
+                mip = mechanical_resistance * self.rho0 * self.c0 + 1j * self.w0 * rho * t_meters * (1 - open_area)
                 zpp = 1 / (1 / zpp + 1 / mip)
             zpp = zpp / self.s0
             zpp = self._broadcast_to_incidence_angles(zpp)
@@ -2662,7 +2804,8 @@ class TMM:
             plate-mass coupling.
             """
             zpp = self._bessel_ingard_circular_sheet_impedance(t_meters, d_meters, open_area, end_length, rho=rho,
-                                                               resistance=contact_resistance)
+                                                               resistance=contact_resistance + facing_impedance,
+                                                               mechanical_resistance=mechanical_resistance)
             zpp = zpp / self.s0
             zpp = self._broadcast_to_incidence_angles(zpp)
 
@@ -2688,6 +2831,16 @@ class TMM:
 
             Tp = np.array([[np.cos(kc * t_corr), 1j * zc / self.s0 * np.sin(kc * t_corr)],
                            [1j * self.s0 / zc * np.sin(kc * t_corr), np.cos(kc * t_corr)]])
+            # A facing in contact sits at the face of the holes it covers: a pressure jump Zf/phi on that side.
+            ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
+            zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
+            for side in (-1, 1):
+                z_face = self._contact_facing_impedance(layer, side=side)
+                if np.any(z_face != 0):
+                    z_face = self._broadcast_to_incidence_angles(z_face / open_area / self.s0)
+                    T_face = np.array([[ones, z_face], [zeros, ones]])
+                    Tp = (np.einsum("ijfa,jkfa->ikfa", T_face, Tp) if side < 0
+                          else np.einsum("ijfa,jkfa->ikfa", Tp, T_face))
 
         self.matrix[layer] = {"type": "perforated_panel_layer",
                               "thickness [mm]": t,
@@ -2699,11 +2852,13 @@ class TMM:
                               "method": method,
                               "porous_contact": porous_contact or None,
                               "contact_resistance [Pa*s/m]": contact_resistance if porous_contact else None,
+                              "mechanical_resistance [-]": mechanical_resistance or None,
+                              "contact_facing": contact_facing or None,
                               "matrix": Tp,
                               }
 
     def slotted_panel_layer(self, t=19, w=8, s=16, open_area=None, rho=None, method="barrier", porous_contact=0,
-                            layer=None):
+                            layer=None, *, mechanical_resistance=0):
         """
         Add a regular long-slot panel as a lumped transfer-matrix layer.
 
@@ -2723,6 +2878,14 @@ class TMM:
         (``K = 1``) for circular holes in contact with a porous layer; applying it to slots and scaling it by
         ``0 <= K <= 1`` follows [3], section 5.2.4.1. ``compute()`` re-evaluates the term from the neighbours present
         at that time.
+
+        A ``porous_facing_layer`` with ``in_contact=True`` directly before or after the plate adds its sheet impedance
+        ``Zf`` to the slot impedance as ``Zf/phi``, before the plate mass is coupled (see ``porous_facing_layer``). If
+        ``rho`` is supplied, the mechanical loss resistance ``r_m`` (``mechanical_resistance``) is added in series with
+        the plate mass, so the plate branch is ``r_m*rho0*c0 + 1j*omega*rho*t*(1 - phi)``. ``r_m`` enters as ``r'`` in
+        the membrane branch of Kang and Fuchs [4], equations 1 and 9, which uses the full surface mass; the
+        ``(1 - phi)`` weighting is this layer's solid-fraction mass described above. It damps only the plate motion, not
+        the flow through the slots.
 
         Parameters
         ----------
@@ -2745,6 +2908,9 @@ class TMM:
             value has no ``porous_layer`` directly before or after the sheet, since the term is then zero.
         layer : None or int, optional
             Optional layer index. If ``None``, the layer is appended.
+        mechanical_resistance : float, optional
+            Mechanical loss resistance ``r_m`` of the plate motion, in series with the plate mass, normalized by
+            ``rho0*c0`` [-]. Requires ``rho``.
 
         References
         ----------
@@ -2753,10 +2919,13 @@ class TMM:
         [2] U. Ingard, "Perforated facing and sound absorption", Journal of the Acoustical Society of America, vol. 26,
             pp. 151-154, 1954.
         [3] T. E. Vigran, "Manual for NorFLAG, version 4.0", Trondheim, 2018.
+        [4] J. Kang and H. V. Fuchs, "Predicting the absorption of open weave textiles and micro-perforated
+            membranes backed by an air space", Journal of Sound and Vibration, vol. 220, pp. 905-920, 1999.
         """
         if method != "barrier":
             raise ValueError("slotted_panel_layer method must be 'barrier'.")
         self._validate_porous_contact(porous_contact)
+        self._validate_mechanical_resistance(mechanical_resistance, rho)
         if layer is None:
             layer = len(self.matrix)
 
@@ -2775,12 +2944,14 @@ class TMM:
         end_length = w_meters * (-1 / np.pi) * np.log(np.sin(0.5 * np.pi * open_area))  # One side
         t_corr = t_meters + 2 * end_length
         contact_resistance = self._porous_contact_resistance(layer, porous_contact, end_length)
+        facing_impedance = self._contact_facing_impedance(layer)
         vis = self.air_prop["air_viscosity"]
         Rp = 0.5 * np.sqrt(2 * vis * self.rho0 * self.w0) * (4 + (2 * t) / w) + contact_resistance
         Xp = self.rho0 * t_corr
-        zs = (Rp + 1j * self.w0 * Xp) / open_area
+        zs = (Rp + 1j * self.w0 * Xp + facing_impedance) / open_area
         if rho:
-            mip = 1j * self.w0 * rho * t_meters * (1 - open_area)  # Specific mass impedance of the plate
+            # Specific impedance of the plate motion: mechanical loss resistance and solid-fraction mass
+            mip = mechanical_resistance * self.rho0 * self.c0 + 1j * self.w0 * rho * t_meters * (1 - open_area)
             zs = 1 / (1 / zs + 1 / mip)
         zs = zs / self.s0
 
@@ -2801,6 +2972,8 @@ class TMM:
                               "method": method,
                               "porous_contact": porous_contact or None,
                               "contact_resistance [Pa*s/m]": contact_resistance if porous_contact else None,
+                              "mechanical_resistance [-]": mechanical_resistance or None,
+                              "contact_facing": bool(self._contact_facings(layer)) or None,
                               "matrix": Ts,
                               }
 
@@ -2838,8 +3011,8 @@ class TMM:
         terms[0, 0] = 0.0
         return float(2 / np.pi * terms.sum())
 
-    def rectangular_slot_layer(self, t=10, w=5, l=20, sw=10, sl=30, rho=None, resistance=0, porous_contact=0,
-                               layer=None):
+    def rectangular_slot_layer(self, t=10, w=5, l=20, sw=10, sl=30, rho=None, porous_contact=0, layer=None, *,
+                               mechanical_resistance=0):
         """
         Add a plate perforated by a regular pattern of finite rectangular slots as a lumped transfer-matrix layer.
 
@@ -2863,16 +3036,23 @@ class TMM:
 
         ``Z_ap = (R + 1j*omega*rho_r*t + 1j*omega*rho0*2*delta)/phi``,
 
-        where ``R`` is a series flow resistance such as a fabric. The term ``1j*omega*rho_r*t`` treats the slot air as a
-        lumped mass, which holds while the plate is much thinner than the wavelength. If ``rho`` is supplied, the
-        full-surface plate mass ``1j*omega*rho*t`` is coupled in parallel with ``Z_ap``, as in the membrane and aperture
-        circuit of Kang and Fuchs [5], equations 1 and 9.
+        where ``R`` is a series impedance at the slots, in the place of the fabric resistance of [4], equation 7. ``R``
+        collects the porous-contact term and the impedance of a facing in contact with the plate, described below.
+        Without them it is zero, and it is complex when the facing carries mass. The term ``1j*omega*rho_r*t`` treats
+        the slot air as a lumped mass, which holds while the plate is much thinner than the wavelength. If ``rho`` is
+        supplied, the plate branch ``r_m*rho0*c0 + 1j*omega*rho*t`` is coupled in parallel with ``Z_ap``, as in the
+        membrane and aperture circuit of Kang and Fuchs [5], equations 1 and 9. ``r_m`` is the mechanical loss
+        resistance (``mechanical_resistance``), normalized by ``rho0*c0``.
 
         With ``porous_contact`` set to ``K > 0``, the resistance ``K*sigma*delta`` is added to ``R``, where ``sigma``
         sums the flow resistivity of the ``porous_layer`` entries directly before and after the plate. Ingard [6],
         equation 3, derived the term (``K = 1``) for circular holes in contact with a porous layer; applying it to
         rectangular slots and scaling it by ``0 <= K <= 1`` follows [7], section 5.2.4.1. ``compute()`` re-evaluates
         the term from the neighbours present at that time.
+
+        A ``porous_facing_layer`` with ``in_contact=True`` directly before or after the plate adds its sheet impedance
+        ``Zf`` to ``R`` (see ``porous_facing_layer``). ``r_m`` damps only the plate motion, not the flow through the
+        slots.
 
         Parameters
         ----------
@@ -2888,13 +3068,14 @@ class TMM:
             Centre-to-centre spacing between slots along their length [mm].
         rho : float or None, optional
             Plate density [kg/m³]. If ``None``, the plate is rigid.
-        resistance : float, optional
-            Flow resistance in series with the slots, such as a fabric on the plate [Pa*s/m].
         porous_contact : float, optional
             Porous-contact factor ``K`` from 0 to 1. ``0`` disables the term. ``compute()`` warns when a nonzero
             value has no ``porous_layer`` directly before or after the sheet, since the term is then zero.
         layer : None or int, optional
             Optional layer index. If ``None``, the layer is appended.
+        mechanical_resistance : float, optional
+            Mechanical loss resistance ``r_m`` of the plate motion, in series with the plate mass, normalized by
+            ``rho0*c0`` [-]. Requires ``rho``.
 
         References
         ----------
@@ -2917,9 +3098,8 @@ class TMM:
             raise ValueError("Rectangular-slot dimensions must be greater than zero.")
         if w > sw or l > sl:
             raise ValueError("Slot width and length must not exceed their centre-to-centre spacings.")
-        if resistance < 0:
-            raise ValueError("resistance must not be negative.")
         self._validate_porous_contact(porous_contact)
+        self._validate_mechanical_resistance(mechanical_resistance, rho)
         if layer is None:
             layer = len(self.matrix)
 
@@ -2928,11 +3108,12 @@ class TMM:
         end_correction = self._ingard_rectangular_end_correction(w_meters, l_meters, sw_meters, sl_meters)
         rho_r = self._rectangular_pore_density(w_meters, l_meters)
         contact_resistance = self._porous_contact_resistance(layer, porous_contact, end_correction)
+        facing_impedance = self._contact_facing_impedance(layer)
 
-        zs = (resistance + contact_resistance + 1j * self.w0 * rho_r * t_meters
+        zs = (contact_resistance + facing_impedance + 1j * self.w0 * rho_r * t_meters
               + 1j * self.w0 * self.rho0 * 2 * end_correction) / open_area
         if rho:
-            plate_mass = 1j * self.w0 * rho * t_meters
+            plate_mass = mechanical_resistance * self.rho0 * self.c0 + 1j * self.w0 * rho * t_meters
             zs = 1 / (1 / zs + 1 / plate_mass)
         zs = self._broadcast_to_incidence_angles(zs / self.s0)
 
@@ -2949,10 +3130,11 @@ class TMM:
                               "slot_spacing_length [mm]": sl,
                               "open_area [%]": open_area * 100,
                               "end_correction [mm]": end_correction * 1000,
-                              "resistance [Pa*s/m]": resistance,
                               "rho [kg/m3]": rho,
                               "porous_contact": porous_contact or None,
                               "contact_resistance [Pa*s/m]": contact_resistance if porous_contact else None,
+                              "mechanical_resistance [-]": mechanical_resistance or None,
+                              "contact_facing": bool(self._contact_facings(layer)) or None,
                               "matrix": Ts,
                               }
 
@@ -3498,8 +3680,11 @@ class TMM:
         # Sheets with porous contact read their neighbours when built, and a double-porosity layer reads whether it
         # lies on the rigid wall. Layers may be added in any order, so these are rebuilt here against the final stack.
         self._build_backing = backing
+        contact_plates = self._contact_facing_plates()
         for key, record in list(self.matrix.items()):
-            if isinstance(record, dict) and (record.get("porous_contact") or record.get("model") == "double_porosity"):
+            # A plate that folded in a facing at an earlier compute() is rebuilt too, in case that facing has gone.
+            if isinstance(record, dict) and (record.get("porous_contact") or record.get("model") == "double_porosity"
+                                             or key in contact_plates or record.get("contact_facing")):
                 self._add_layer_from_record(key, record)
         for key, record in self.matrix.items():
             if isinstance(record, dict) and record.get("porous_contact") and not any(
@@ -3707,7 +3892,8 @@ class TMM:
                                         rho=value["rho [kg/m3]"],
                                         method=value["method"],
                                         porous_contact=value.get("porous_contact") or 0,
-                                        layer=key)
+                                        layer=key,
+                                        mechanical_resistance=value.get("mechanical_resistance [-]") or 0)
         elif value["type"] == "slotted_panel_layer":
             self.slotted_panel_layer(t=value["thickness [mm]"],
                                      w=value["slot_width [mm]"],
@@ -3715,21 +3901,24 @@ class TMM:
                                      rho=value["rho [kg/m3]"],
                                      method=value["method"],
                                      porous_contact=value.get("porous_contact") or 0,
-                                     layer=key)
+                                     layer=key,
+                                     mechanical_resistance=value.get("mechanical_resistance [-]") or 0)
         elif value["type"] == "rectangular_slot_layer":
+            self._check_record_supported(value)
             self.rectangular_slot_layer(t=value["thickness [mm]"],
                                         w=value["slot_width [mm]"],
                                         l=value["slot_length [mm]"],
                                         sw=value["slot_spacing_width [mm]"],
                                         sl=value["slot_spacing_length [mm]"],
                                         rho=value["rho [kg/m3]"],
-                                        resistance=value["resistance [Pa*s/m]"],
                                         porous_contact=value.get("porous_contact") or 0,
-                                        layer=key)
+                                        layer=key,
+                                        mechanical_resistance=value.get("mechanical_resistance [-]") or 0)
         elif value["type"] == "membrane_layer":
             self.membrane_layer(t=value["thickness [mm]"],
                                 rho=value["density [kg/m³]"],
-                                layer=key)
+                                layer=key,
+                                mechanical_resistance=value.get("mechanical_resistance [-]") or 0)
         elif value["type"] == "porous_facing_layer":
             open_area = value["open_area [%]"]
             self.porous_facing_layer(t=value["thickness [mm]"],
@@ -3743,11 +3932,24 @@ class TMM:
                                      d=value["pore_diameter [mm]"],
                                      s=value["pore_spacing [mm]"],
                                      open_area=None if open_area is None else open_area / 100,
-                                     layer=key)
+                                     layer=key,
+                                     in_contact=bool(value.get("in_contact")))
+
+    @staticmethod
+    def _check_record_supported(value):
+        """Raise for a stored layer record that the current layer methods cannot rebuild."""
+        if value.get("type") == "rectangular_slot_layer" and value.get("resistance [Pa*s/m]"):
+            raise ValueError("This rectangular_slot_layer record has a slot resistance, which the layer no longer "
+                             "takes; add porous_facing_layer(method='pieren_fixed', resistance=R, in_contact=True) "
+                             "next to the plate instead.")
 
     def rebuild(self):
         """Rebuild the layer matrices from the stored metadata and recompute the results."""
         matrix = self.matrix.copy()
+        # Check before the layers are cleared, so a record that cannot be rebuilt leaves the object as it was.
+        for value in matrix.values():
+            if isinstance(value, dict):
+                self._check_record_supported(value)
         preserve_diffuse_method = (
             getattr(self, "_results_stale", False)
             and any("diffuse_method was changed" in reason for reason in getattr(self, "_stale_reasons", []))
@@ -3862,6 +4064,8 @@ class TMM:
                     if value.get("method") in {"barrier", "eq_fluid", "bessel_ingard"} \
                             and value.get("end_correction") is not None:
                         end_correction_arg = f"end_correction='{value['end_correction']}', "
+                    elif value.get("method") == "barrier_mpp" and value.get("end_correction") == "maa1987":
+                        end_correction_arg = "end_correction='maa1987', "
                     logged_calls.append(
                         f"{self.filename}.perforated_panel_layer("
                         f"t={value['thickness [mm]']:0.1f}, "
@@ -3871,6 +4075,7 @@ class TMM:
                         f"rho={value['rho [kg/m3]']}, "
                         f"method='{value['method']}'"
                         f"{contact_arg}"
+                        f"{self._mechanical_resistance_arg(value)}"
                         f")"
                         )
                 elif value["type"] == "slotted_panel_layer":
@@ -3883,6 +4088,7 @@ class TMM:
                         f"rho={value['rho [kg/m3]']}, "
                         f"method='{value['method']}'"
                         f"{contact_arg}"
+                        f"{self._mechanical_resistance_arg(value)}"
                         f")"
                         )
                 elif value["type"] == "rectangular_slot_layer":
@@ -3894,9 +4100,9 @@ class TMM:
                         f"l={value['slot_length [mm]']!r}, "
                         f"sw={value['slot_spacing_width [mm]']!r}, "
                         f"sl={value['slot_spacing_length [mm]']!r}, "
-                        f"rho={value['rho [kg/m3]']!r}, "
-                        f"resistance={value['resistance [Pa*s/m]']!r}"
+                        f"rho={value['rho [kg/m3]']!r}"
                         f"{contact_arg}"
+                        f"{self._mechanical_resistance_arg(value)}"
                         f")"
                         )
                 elif value["type"] == "membrane_layer":
@@ -3904,6 +4110,7 @@ class TMM:
                         f"{self.filename}.membrane_layer("
                         f"t={value['thickness [mm]']:0.1f}, "
                         f"rho={value['density [kg/m³]']}"
+                        f"{self._mechanical_resistance_arg(value)}"
                         f")"
                         )
                 elif value["type"] == "porous_facing_layer":
@@ -3917,6 +4124,7 @@ class TMM:
                         f"tortuosity={value['tortuosity']}, "
                         f"method='{value['method']}'"
                         f"{free_arg}"
+                        f"{', in_contact=True' if value.get('in_contact') else ''}"
                         f")"
                         )
             else:
@@ -3945,6 +4153,12 @@ class TMM:
                          f"{self.filename}.save()"]
 
         return logged_calls
+
+    @staticmethod
+    def _mechanical_resistance_arg(value):
+        """Return the ``mechanical_resistance`` keyword for ``log_rebuild()``, or an empty string when unset."""
+        resistance = value.get("mechanical_resistance [-]")
+        return f", mechanical_resistance={resistance!r}" if resistance else ""
 
     def print_rebuild(self):
         """Print the calls needed to recreate this object."""
@@ -4002,14 +4216,14 @@ class TMM:
         elif layer_type == "air_layer":
             keys = ["type", "thickness [mm]"]
         elif layer_type == "membrane_layer":
-            keys = ["type", "thickness [mm]", "density [kg/m³]"]
+            keys = ["type", "thickness [mm]", "density [kg/m³]", "mechanical_resistance [-]"]
         elif layer_type == "porous_facing_layer":
             keys = ["type", "method", "thickness [mm]", "surface_mass [kg/m2]", "resistance [Pa*s/m]"]
             if method == "rebillard":
                 keys.extend(["porosity", "tortuosity"])
             elif method == "pieren":
                 keys.append("free")
-            keys.extend(["rho [kg/m3]", "pore_diameter [mm]", "pore_spacing [mm]", "open_area [%]"])
+            keys.extend(["rho [kg/m3]", "pore_diameter [mm]", "pore_spacing [mm]", "open_area [%]", "in_contact"])
         elif layer_type == "perforated_panel_layer":
             keys = [
                 "type",
@@ -4019,16 +4233,18 @@ class TMM:
                 "hole_spacing [mm]",
                 "open_area [%]",
             ]
-            if method in {"barrier", "eq_fluid", "bessel_ingard"}:
-                keys.append("end_correction")
-            keys.extend(["rho [kg/m3]", "porous_contact", "contact_resistance [Pa*s/m]"])
+            keys.append("end_correction")
+            keys.extend(["rho [kg/m3]", "mechanical_resistance [-]", "porous_contact",
+                         "contact_resistance [Pa*s/m]", "contact_facing"])
         elif layer_type == "slotted_panel_layer":
             keys = ["type", "method", "thickness [mm]", "slot_width [mm]", "slot_spacing [mm]", "open_area [%]",
-                    "rho [kg/m3]", "porous_contact", "contact_resistance [Pa*s/m]"]
+                    "rho [kg/m3]", "mechanical_resistance [-]", "porous_contact", "contact_resistance [Pa*s/m]",
+                    "contact_facing"]
         elif layer_type == "rectangular_slot_layer":
             keys = ["type", "thickness [mm]", "slot_width [mm]", "slot_length [mm]", "slot_spacing_width [mm]",
-                    "slot_spacing_length [mm]", "open_area [%]", "end_correction [mm]", "resistance [Pa*s/m]",
-                    "rho [kg/m3]", "porous_contact", "contact_resistance [Pa*s/m]"]
+                    "slot_spacing_length [mm]", "open_area [%]", "end_correction [mm]", "rho [kg/m3]",
+                    "mechanical_resistance [-]", "porous_contact", "contact_resistance [Pa*s/m]",
+                    "contact_facing"]
         elif layer_type == "backing":
             keys = ["type", "backing", "rigid_backing", "diffuse_method", "impedance_conjugate"]
         else:
