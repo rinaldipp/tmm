@@ -30,6 +30,10 @@ from tmm import _causality as causality
 from tmm import _h5utils as h5utils
 from tmm import _plot as plot
 from tmm import _utils as utils
+from tmm._reference_data import (  # noqa: F401  (re-exported for tmm.tmm imports)
+    ALPHA_W_CLASSES, ALPHA_W_REFERENCE, ALPHA_W_THIRD_OCTAVE_INDICES, JEONG_ANGLE_WEIGHTS, JEONG_WEIGHT_ANGLES,
+    JEONG_WEIGHT_BANDS, POROUS_PRESETS, POROUS_VALIDITY, PRESET_PARAMETERS, _FullTextFrame,
+)
 from tmm.database.path import path as database_path
 
 plot.set_style()
@@ -46,118 +50,6 @@ RECT_SLOT_END_CORRECTION_TERMS = 180
 # Equivalent-fluid models built from the Johnson et al. dynamic tortuosity, and the frame options of porous_layer.
 JCA_MODELS = ("jca", "jcal", "jcapl")
 POROUS_FRAMES = ("rigid", "limp")
-# Material parameter sets for porous_layer(preset=...), from Allard and Atalla (2009) and Olny and Panneton (2008).
-# Names are the material and its flow resistivity in kPa*s/m². Units as in porous_layer: sigma [kPa*s/m²], lengths
-# [µm], thermal_permeability [m²], bulk_density [kg/m³]. "source" names the table and printed page; "description" says
-# how the source uses the material; "model" is the model porous_layer uses when the call gives none, "jcal" for the
-# sets that include a thermal permeability. TMM.porous_presets() lists them.
-def _preset(sigma, porosity, tortuosity, viscous_length, thermal_length, bulk_density, source, description,
-            thermal_permeability=None, model="jca"):
-    return dict(model=model, sigma=sigma, porosity=porosity, tortuosity=tortuosity, viscous_length=viscous_length,
-                thermal_length=thermal_length, bulk_density=bulk_density, thermal_permeability=thermal_permeability,
-                source=source, description=description)
-
-
-POROUS_PRESETS = {
-    "foam_2.3k": _preset(
-        2.3, 0.960, 1.28, 202.0, 376.0, 60.0, "Olny and Panneton (2008), Table I, p. 817, and Table II, p. 819",
-        "Polyurethane foam characterized in an impedance tube (12.7 mm sample). Viscous parameters by the "
-        "inversion method of Panneton and Olny (2006), thermal parameters by fitting the Lafarge et al. model; "
-        "thermal permeability ±23%, thermal length ±7%.", thermal_permeability=167e-10, model="jcal"),
-    "carpet_5k": _preset(
-        5.0, 0.99, 1.0, 23.0, 28.0, 60.0, "Table 11.7, p. 274",
-        "Carpet of a layered system (carpet, impervious screen, fibrous layer) bonded onto a rigid wall (Figure "
-        "11.16; measurements of Brouard et al. 1994). The book models the 3.5 mm carpet as two porous layers, since "
-        "its fibre bundles are fixed to an impervious backing at the lower face, and Table 11.7 gives both the same "
-        "values."),
-    "foam_5k": _preset(
-        5.0, 0.98, 1.1, 150.0, 216.0, 33.0, "Table 11.3, p. 266",
-        "Plastic foam covered by a sheet of glass wool, bonded onto a rigid wall (Figure 11.6)."),
-    "foam_6.6k": _preset(
-        6.6, 0.98, 1.03, 200.0, 380.0, 11.2, "Table 11.9, p. 276",
-        "Foam bonded onto a 0.6 mm aluminium plate for diffuse-field transmission loss."),
-    "foam_10.9k": _preset(
-        10.9, 0.99, 1.02, 100.0, 130.0, 8.8, "Table 11.5, layer 3, p. 271 (also Tables 12.1, 12.4, 12.5)",
-        "Foam of the felt-screen-foam system, modelled as limp; the same foam is the limp foam of the plate-foam "
-        "systems in chapter 12."),
-    "foam_12.6k": _preset(
-        12.569, 0.99, 1.02, 78.0, 192.0, 8.85, "Table 13.1, p. 328",
-        "Foam sample of 0.5 m x 0.5 m x 5.08 cm on a rigid wall, used for the finite-size finite-element example."),
-    "foam_22k": _preset(
-        22.0, 0.98, 1.9, 87.0, 146.0, 30.0, "Table 11.6, p. 273",
-        "Plastic foam surfaced with an impervious screen, bonded onto a rigid wall (Figure 11.14)."),
-    "foam_22.1k": _preset(
-        22.1, 0.97, 2.2, 39.0, 275.0, 24.5, "Table 8.1, material 2, p. 174",
-        "Material 2 of the chapter 8 surface-wave and layer-mode examples, a 2 cm layer. The book does not name "
-        "the material type."),
-    "felt_23k": _preset(
-        23.0, 0.99, 1.4, 64.0, 131.0, 66.0, "Table 11.5, layer 1, p. 271",
-        "Felt of a felt-screen-foam system on a rigid wall, modelled as a limp porous material."),
-    "glass_wool_24.3k": _preset(
-        24.3, 0.988, 1.01, 63.0, 137.0, 53.0, "Olny and Panneton (2008), Table I, p. 817, and Table II, p. 819",
-        "Glass wool characterized in an impedance tube (12.0 mm sample, frame held with pins). Viscous parameters "
-        "by the inversion method of Panneton and Olny (2006), thermal parameters by fitting the Lafarge et al. "
-        "model; thermal permeability ±10%, thermal length ±6%.", thermal_permeability=31e-10, model="jcal"),
-    "soft_fibrous_25k": _preset(
-        25.0, 0.98, 1.02, 90.0, 180.0, 30.0, "Table 11.2, p. 254",
-        "Soft fibrous material used to compare the rigid and limp frame effective densities (Figure 11.2), "
-        "measured by Panneton (2007)."),
-    "fibrous_layer_33k": _preset(
-        33.0, 0.98, 1.1, 50.0, 110.0, 60.0, "Table 11.7, p. 274",
-        "Fibrous layer behind the impervious screen of a layered system (carpet, impervious screen, fibrous layer) "
-        "bonded onto a rigid wall (Figure 11.16)."),
-    "fibrous_blanket_34k": _preset(
-        34.0, 0.98, 1.18, 60.0, 86.0, 41.0, "Table 11.4, layer 1, p. 270",
-        "Blanket facing a resistive screen and two foams, the layered material bonded onto a rigid wall "
-        "(Figure 11.10)."),
-    "mineral_wool_34k": _preset(
-        34.0, 0.95, 1.0, 40.0, 80.0, 90.0, "Table 12.2, p. 293",
-        "Mineral wool between a steel plate and a laminated plate in a double wall (Villot et al. 2001)."),
-    "glass_wool_40k": _preset(
-        40.0, 0.94, 1.06, 56.0, 110.0, 130.0, "Table 11.8, p. 275 (also Table 6.1, p. 124)",
-        "Glass wool 'Domisol Coffrage', manufactured by Saint-Gobain Isover (section 6.5.4). Anisotropic; these are "
-        "its normal-incidence parameters, used for a glass wool bonded onto a 1 mm aluminium plate."),
-    "foam_50k": _preset(
-        50.0, 0.98, 1.4, 50.0, 150.0, 25.0, "Table 8.1, material 1, p. 174",
-        "Material 1 of the chapter 8 Rayleigh-wave predictions. The book does not name the material type; the "
-        "surface-wave measurements of that chapter are on open-cell foam."),
-    "rock_wool_51.2k": _preset(
-        51.2, 0.970, 1.06, 41.0, 59.0, 183.0, "Olny and Panneton (2008), Table I, p. 817, and Table II, p. 819",
-        "Rock wool characterized in an impedance tube (11.0 mm sample, frame held with pins). Viscous parameters "
-        "by the inversion method of Panneton and Olny (2006), thermal parameters by fitting the Lafarge et al. "
-        "model; thermal permeability ±8%, thermal length ±14%. Thermal shape factor 2.84, far from the JCA value "
-        "of 1.",
-        thermal_permeability=12e-10, model="jcal"),
-    "foam_65k": _preset(
-        65.0, 0.99, 1.98, 37.0, 120.0, 16.0, "Table 11.4, layer 4, p. 270",
-        "Foam against the rigid wall in the blanket-screen-foam layered material (Figure 11.10)."),
-    "foam_87k": _preset(
-        87.0, 0.97, 2.52, 36.0, 118.0, 31.0, "Table 11.4, layer 3, p. 270",
-        "Foam behind the resistive screen in the blanket-screen-foam layered material (Figure 11.10)."),
-    "rock_wool_135k": _preset(
-        135.0, 0.94, 2.1, 49.0, 166.0, 130.0, "Table 13.2, p. 337; Sgard et al. (2005), Table 1",
-        "Rockwool characterized for perforated (double porosity) rockwool samples (Atalla et al. 2001). Includes "
-        "the static thermal permeability.", thermal_permeability=3.3e-9, model="jcal"),
-}
-PRESET_PARAMETERS = ("sigma", "porosity", "tortuosity", "viscous_length", "thermal_length", "thermal_permeability",
-                     "bulk_density")
-
-
-class _FullTextFrame(pandas.DataFrame):
-    """DataFrame that shows text columns in full when displayed, without changing the global pandas options."""
-
-    @property
-    def _constructor(self):
-        return _FullTextFrame
-
-    def _repr_html_(self):
-        with pandas.option_context("display.max_colwidth", None):
-            return super()._repr_html_()
-
-    def __repr__(self):
-        with pandas.option_context("display.max_colwidth", None):
-            return super().__repr__()
-
 
 # porous_layer arguments that log_rebuild writes when set, paired with their self.matrix record keys.
 POROUS_LOG_KEYS = (
@@ -171,76 +63,6 @@ POROUS_LOG_KEYS = (
     ("perforation_diameter", "perforation_diameter [mm]"),
     ("perforation_spacing", "perforation_spacing [mm]"),
 )
-
-# Validity ranges of the porous models, as their sources give them. "variable" is the quantity the source bounds:
-# "f/sigma" [m³/kg] or "X" = rho0*f/sigma. "basis" is "stated" when the source states the range, "data" when it is only
-# the span of the data the model was fitted to. "sigma" [k*Pa*s/m²] and "frequency" [Hz] are the spans of the fitted
-# data. None marks an open end or a range the source does not give. The sources of the models absent from the table
-# state no range.
-POROUS_VALIDITY = {
-    "db": {"variable": "f/sigma", "range": (0.01, 1.0), "basis": "stated", "sigma": (2.0, 80.0),
-           "frequency": (250.0, 4000.0), "material": "glass fibre and mineral wool",
-           "source": "Delany and Bazley (1970), p. 111 (10 < f/sigma <= 1000 in cgs units) and p. 108"},
-    "miki": {"variable": "f/sigma", "range": (0.01, 1.0), "basis": "data", "sigma": (2.0, 80.0),
-             "frequency": (250.0, 4000.0), "material": "fibrous",
-             "source": "Miki (1990), p. 21: regression on the Delany and Bazley data"},
-    "qunli": {"variable": None, "range": None, "basis": "data", "sigma": (2.9, 24.3), "frequency": (200.0, 2000.0),
-              "material": "open-cell plastic foam of medium flow resistivity",
-              "source": "Wu (1988), p. 143 (15 foams) and p. 146"},
-    "mac": {"variable": "f/sigma", "range": (45 / 28e3, 11e3 / 28e3), "basis": "data", "sigma": None,
-            "frequency": None, "material": "glass wool",
-            "source": "Oliva and Hongisto (2013), p. 1476: Method 8, fitted over 45-11000 Hz to Allard and Champoux "
-                      "(1992) for one 28 k*Pa*s/m² wool"},
-    "komatsu": {"variable": "f/sigma", "range": (100 / 72.9e3, 5000 / 6e3), "basis": "data", "sigma": (6.0, 72.9),
-                "frequency": (100.0, 5000.0), "material": "glass wool and rock wool",
-                "source": "Komatsu (2008), Table 3 and section 3"},
-    "mechel_1976": {"variable": "X", "range": (None, 1.0), "basis": "stated", "sigma": None, "frequency": None,
-                    "material": "fibrous",
-                    "source": "Mechel (1976), p. 213: power law for 1 <= C <= 60, Rayleigh model for C > 60"},
-    "mechel_gf_lowX": {"variable": "X", "range": (None, 0.025), "basis": "stated", "sigma": None, "frequency": None,
-                       "material": "glass fibre",
-                       "source": "Attenborough and Ver (2006), Table 8.2, p. 242: E <= 0.025"},
-    "mechel_gf_highX": {"variable": "X", "range": (0.025, None), "basis": "stated", "sigma": None, "frequency": None,
-                        "material": "glass fibre",
-                        "source": "Attenborough and Ver (2006), Table 8.2, p. 242: E > 0.025"},
-    "mechel_rf_lowX": {"variable": "X", "range": (None, 0.025), "basis": "stated", "sigma": None, "frequency": None,
-                       "material": "mineral and basalt wool",
-                       "source": "Attenborough and Ver (2006), Table 8.2, p. 242: E <= 0.025"},
-    "mechel_rf_highX": {"variable": "X", "range": (0.025, None), "basis": "stated", "sigma": None, "frequency": None,
-                        "material": "mineral and basalt wool",
-                        "source": "Attenborough and Ver (2006), Table 8.2, p. 242: E > 0.025"},
-    "mechel_grundmann": {"variable": "X", "range": (0.003, 0.4), "basis": "stated", "sigma": None, "frequency": None,
-                         "material": "mineral fibre (fibre_type=1) and glass fibre (fibre_type=2)",
-                         "source": "Mechel et al. (2008), Formulas of Acoustics, section G.11, p. 399"},
-    "garai_pompoli": {"variable": None, "range": None, "basis": "data", "sigma": (0.88, 22.699), "frequency": None,
-                      "material": "polyester fibre", "source": "Garai and Pompoli (2005), Table 1"},
-}
-
-# Angular intensity weightings w(theta) of Jeong (2013), Table II, tabulated from the phased beam-tracing results of
-# Jeong (2010). Rows are the 250 Hz to 4 kHz octave bands, columns 0 to 90 degrees in 15-degree steps. Keys follow the
-# figure captions of Jeong (2010): Table II labels its w1 block "floor in a rectangular room", but its values are the
-# irregular-room floor of Fig. 6b; w2 ("floor in an irregular room") is the rectangular-room floor of Fig. 7; w3
-# ("sidewall in a rectangular room") is the irregular-room wall of Fig. 4b. Table II prints 0.11 for w1 at 4 kHz and
-# 45 degrees; Fig. 6b shows about 1.1, and 1.11 restores the unit mean over angle of the other rows.
-JEONG_WEIGHT_BANDS = (250.0, 500.0, 1000.0, 2000.0, 4000.0)
-JEONG_WEIGHT_ANGLES = (0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0)
-JEONG_ANGLE_WEIGHTS = {
-    "irregular_floor": ((1.63, 1.46, 1.56, 1.46, 0.41, 0.49, 0.0),
-                        (1.18, 1.25, 1.14, 1.07, 0.99, 0.82, 0.54),
-                        (1.60, 1.58, 1.27, 0.96, 0.84, 0.75, 0.0),
-                        (1.76, 1.75, 1.39, 1.00, 0.76, 0.33, 0.0),
-                        (1.60, 1.57, 1.40, 1.11, 0.75, 0.40, 0.17)),
-    "rectangular_floor": ((1.20, 1.14, 1.04, 1.23, 1.22, 0.80, 0.36),
-                          (0.85, 0.69, 1.31, 1.32, 1.25, 0.87, 0.71),
-                          (1.38, 1.43, 1.28, 1.23, 0.87, 0.53, 0.26),
-                          (1.62, 1.56, 1.43, 1.16, 0.77, 0.42, 0.05),
-                          (1.62, 1.57, 1.40, 1.14, 0.84, 0.43, 0.0)),
-    "irregular_wall": ((1.25, 1.43, 1.03, 0.99, 1.06, 0.81, 0.43),
-                       (1.61, 1.59, 1.43, 1.15, 0.79, 0.42, 0.0),
-                       (1.63, 1.57, 1.40, 1.15, 0.82, 0.42, 0.0),
-                       (1.64, 1.57, 1.41, 1.15, 0.82, 0.42, 0.0),
-                       (1.64, 1.58, 1.41, 1.14, 0.81, 0.41, 0.0)),
-}
 
 
 class TMM:
@@ -1369,14 +1191,122 @@ class TMM:
             return absorbed / angular_integral(4 * cos_theta / np.abs(1 + z_f * cos_theta) ** 2)
         return absorbed / angular_integral(1 / z_f.real)
 
+    def alpha_w(self, sample_size=None):
+        """
+        Return the weighted sound absorption coefficient ``alpha_w`` of ISO 11654 [1] with its shape indicators.
+
+        The absorption coefficient is first averaged over the narrowband lines of each third-octave band from 200 Hz to
+        5 kHz. The bands are centred on the exact base-10 mid-band frequencies ``1000*10**(x/10)``, ``x = -7`` to ``7``,
+        with edges at ``10**(+-0.05)`` times the centre, and a line at ``f`` belongs to the band when
+        ``f_low <= f < f_high``. The practical coefficient ``alpha_p`` of each octave band from 250 Hz to 4 kHz is the
+        mean of its three third-octave values, rounded to the second decimal and then to a step of 0.05, and limited to
+        1.00 ([1], clause 4.1). A negative octave mean is taken as 0. The standard does not say how a tie at the second
+        decimal is rounded, and the method rounds it up. The reference curve 0.80, 1.00, 1.00, 1.00, 0.90 ([1],
+        figure 1) is shifted down in steps of 0.05 until the sum of the unfavourable deviations, where ``alpha_p`` is
+        below the curve, is at most 0.10 (clause 4.2). ``alpha_w`` is the shifted curve at 500 Hz. A shape indicator
+        marks an excess of ``alpha_p`` over the shifted curve of 0.25 or more (clause 4.3): ``L`` at 250 Hz, ``M`` at
+        500 Hz or 1 kHz, and ``H`` at 2 kHz or 4 kHz. The class follows the informative annex B, table B.1. The method
+        counts in hundredths, so a deviation sum of exactly 0.10 passes.
+
+        Parameters
+        ----------
+        sample_size : float or tuple of float, optional
+            Side lengths ``(a, b)`` of a finite sample [m]. If given, the method rates
+            ``finite_sample_absorption(sample_size)`` with its default settings instead of ``self.alpha``. It needs a
+            treatment computed with ``incidence="diffuse"``.
+
+        Returns
+        -------
+        dict
+            ``alpha_w`` (float), ``shape`` (the indicator letters, empty when there are none), ``label`` (for example
+            ``"0.70(H)"``), ``class`` (``"A"`` to ``"E"`` or ``"not classified"``), ``practical`` (``alpha_p`` at
+            250 Hz to 4 kHz), ``reference`` (the shifted reference curve at the same bands), ``third_octave`` (the
+            band means at 200 Hz to 5 kHz), and ``incidence`` (the absorption rated: ``"finite sample a x b m"``,
+            ``"diffuse (field)"``, ``"diffuse (paris)"``, ``"normal"``, or ``"angle <theta> deg"``).
+
+        Raises
+        ------
+        RuntimeError
+            If the treatment has not been computed.
+        ValueError
+            If the frequency grid does not cover the 200 Hz to 5 kHz third-octave bands or leaves one of them empty, if
+            the absorption is not finite in a band, or if ``sample_size`` is given without diffuse incidence.
+
+        Notes
+        -----
+        ISO 11654 rates reverberation-room measurements made to ISO 354 on a finite sample. A finite sample absorbs
+        more than the infinite one through its edges, and ``sample_size`` rates the absorption of a finite sample of
+        that size. Without it, the
+        method rates ``self.alpha`` as the last ``compute()`` left it: with ``incidence="diffuse"`` the absorption of
+        the field-incidence impedance (``diffuse_method="field"``, the default) or the Paris average
+        (``diffuse_method="paris"``), with ``incidence="normal"`` the normal-incidence absorption, and with
+        ``incidence="angle"`` the absorption at that angle. The ``incidence`` entry of the result names the case. The
+        standard considers the rating not appropriate below 250 Hz ([1], clause 1.2).
+
+        References
+        ----------
+        [1] ISO 11654:1997, "Acoustics - Sound absorbers for use in buildings - Rating of sound absorption",
+            International Organization for Standardization, 1997.
+        """
+        if not self._has_computed_results():
+            raise RuntimeError("alpha_w() needs computed results. Call compute() first.")
+        freq = np.asarray(self.freq, dtype=float)
+        centres = 1000 * 10 ** (np.array(ALPHA_W_THIRD_OCTAVE_INDICES) / 10)
+        low, high = centres * 10 ** -0.05, centres * 10 ** 0.05
+        if freq.min() > low[0] or freq.max() < high[-1]:
+            raise ValueError(f"alpha_w needs the third-octave bands from 200 Hz to 5 kHz: set fmin <= "
+                             f"{np.floor(low[0] * 10) / 10} Hz and fmax >= {np.ceil(high[-1] * 10) / 10} Hz.")
+        if sample_size is None:
+            alpha = self.alpha
+            if self.incidence == "diffuse":
+                rated = f"diffuse ({self.diffuse_method})"
+            elif self.incidence == "angle":
+                rated = f"angle {float(self.incidence_angle[0]):g} deg"
+            else:
+                rated = "normal"
+        else:
+            if self.incidence != "diffuse":
+                raise ValueError("alpha_w(sample_size=...) needs a treatment computed with incidence='diffuse'.")
+            alpha = self.finite_sample_absorption(sample_size)
+            sides = np.atleast_1d(np.asarray(sample_size, dtype=float))
+            rated = "finite sample " + " x ".join(f"{side:g}" for side in np.repeat(sides, 3 - sides.size)) + " m"
+        alpha = np.asarray(alpha, dtype=float)
+        third_octave = []
+        for f_low, f_high in zip(low, high):
+            in_band = (freq >= f_low) & (freq < f_high)
+            if not np.any(in_band):
+                raise ValueError(f"alpha_w found no frequency line in the third-octave band {f_low:.1f} to "
+                                 f"{f_high:.1f} Hz; refine the frequency grid.")
+            if not np.all(np.isfinite(alpha[in_band])):
+                raise ValueError(f"alpha_w found a non-finite absorption in the third-octave band {f_low:.1f} to "
+                                 f"{f_high:.1f} Hz.")
+            third_octave.append(alpha[in_band].mean())
+        third_octave = np.array(third_octave)
+        practical = []
+        for mean in third_octave.reshape(5, 3).mean(axis=1):
+            hundredths = max(int(np.floor(np.round(mean * 100, 9) + 0.5)), 0)
+            practical.append(min(5 * int(round(hundredths / 5)), 100))  # hundredths / 5 never ends in .5
+        for shift in range(0, 105, 5):
+            reference = [value - shift for value in ALPHA_W_REFERENCE]
+            if sum(max(r - p, 0) for r, p in zip(reference, practical)) <= 10:
+                break
+        excess = [p - r >= 25 for p, r in zip(practical, reference)]
+        shape = "".join(letter for letter, hit in (("L", excess[0]), ("M", excess[1] or excess[2]),
+                                                   ("H", excess[3] or excess[4])) if hit)
+        value = reference[1]
+        rating_class = next((name for lowest, name in ALPHA_W_CLASSES if value >= lowest), "not classified")
+        return {"alpha_w": value / 100, "shape": shape, "label": f"{value / 100:.2f}" + (f"({shape})" if shape else ""),
+                "class": rating_class, "practical": tuple(p / 100 for p in practical),
+                "reference": tuple(r / 100 for r in reference), "third_octave": third_octave, "incidence": rated}
+
     @staticmethod
     def porous_presets():
         """
         Return the ``porous_layer(preset=...)`` parameter sets as a table.
 
         Each row holds the parameters in ``porous_layer()`` units, the table and printed page of Allard and Atalla
-        (2009) or Olny and Panneton (2008) the values come from, and the source's description of the material and how
-        it is used there.
+        (2009), Olny and Panneton (2008) or Kino and Ueno (2007) the values come from, and the source's description of
+        the material and how it is used there.
 
         Returns
         -------
@@ -1385,6 +1315,61 @@ class TMM:
             columns in full; the global pandas display options are left unchanged.
         """
         return _FullTextFrame.from_dict(POROUS_PRESETS, orient="index").rename_axis("preset")
+
+    @staticmethod
+    def flow_resistivity(density, fibre_diameter=None, model="bies_hansen"):
+        """
+        Estimate the airflow resistivity of a fibrous material from its bulk density and fibre diameter.
+
+        ``model="bies_hansen"`` is equation 5 of Bies and Hansen [1] for glass fibre, ``sigma*d**2*rho_m**-1.53 = K``
+        with ``K = 3.18e-9``, the flow resistivity ``sigma`` [Pa*s/m²], the fibre diameter ``d`` [m] and the bulk
+        density ``rho_m`` [kg/m³]. The source applies it to material of fairly uniform fibre diameter in which the
+        binder plays no large part ([1], p. 367). ``model="garai_pompoli"`` is equation 2 of Garai and Pompoli [2] for
+        polyester fibre, ``sigma = 25.989*rho_m**1.404``, fitted to samples of 12 to 60 kg/m³ made of fibres of 18 to
+        48 µm. It has no diameter. With ``fibre_diameter`` the method uses equation 24 of Kino and Ueno [3],
+        ``sigma*d**2*rho_m**-1.404 = 28.3e-9``, which recasts equation 2 about the 33 µm mean diameter of [2].
+
+        Parameters
+        ----------
+        density : float or array
+            Bulk density of the material [kg/m³].
+        fibre_diameter : float or array, optional
+            Mean fibre diameter [µm]. Required by ``"bies_hansen"``; optional for ``"garai_pompoli"``. The fibreglass
+            products measured in [1], figure 2, range from 6.5 to 9.4 µm; the figure legend prints the unit as mm.
+        model : str, optional
+            ``"bies_hansen"`` or ``"garai_pompoli"``.
+
+        Returns
+        -------
+        float or array
+            Flow resistivity [k*Pa*s/m²], the unit of ``porous_layer(sigma=...)``.
+
+        References
+        ----------
+        [1] D. A. Bies and C. H. Hansen, "Flow resistance information for acoustical design", Applied Acoustics,
+            vol. 13, pp. 357-391, 1980.
+        [2] M. Garai and F. Pompoli, "A simple empirical model of polyester fibre materials for acoustical
+            applications", Applied Acoustics, vol. 66, pp. 1383-1398, 2005.
+        [3] N. Kino and T. Ueno, "Experimental determination of the micro- and macrostructural parameters
+            influencing the acoustical performance of fibrous media", Applied Acoustics, vol. 68, pp. 1439-1458, 2007.
+        """
+        if model not in ("bies_hansen", "garai_pompoli"):
+            raise NameError(f"Unknown flow resistivity model '{model}'. Use 'bies_hansen' or 'garai_pompoli'.")
+        density = np.asarray(density, dtype=float)
+        if np.any(~np.isfinite(density)) or np.any(density <= 0):
+            raise ValueError("density must be positive [kg/m³].")
+        if fibre_diameter is None:
+            if model == "bies_hansen":
+                raise ValueError("model 'bies_hansen' needs fibre_diameter [µm].")
+            sigma = 25.989 * density ** 1.404
+        else:
+            d = np.asarray(fibre_diameter, dtype=float)
+            if np.any(~np.isfinite(d)) or np.any(d <= 0):
+                raise ValueError("fibre_diameter must be positive [µm].")
+            d = d * 1e-6
+            sigma = (3.18e-9 * density ** 1.53 if model == "bies_hansen" else 28.3e-9 * density ** 1.404) / d ** 2
+        sigma = sigma / 1000
+        return float(sigma) if np.ndim(sigma) == 0 else sigma
 
     def equivalent_fluid_model(self, sigma, model="mac", fibre_type=1, porosity=0.95, tortuosity=1.0,
                                viscous_length=None, thermal_length=None, thermal_permeability=None,
@@ -1913,36 +1898,51 @@ class TMM:
         values, so ``log_rebuild()`` does not depend on the preset table. ``porous_presets()`` lists each set with its
         source page and the source's description of the material.
 
-        ======================= ===== ============ ====== ===== ===== ====== ======= ==== ========
-        ``preset``              model Source       sigma  phi   alpha Lambda Lambda' rho1 q0'
-        ======================= ===== ============ ====== ===== ===== ====== ======= ==== ========
-        ``foam_2.3k``           jcal  [3] I, II    2.3    0.96  1.28  202    376     60   1.67e-08
-        ``carpet_5k``           jca   [1] 11.7     5      0.99  1     23     28      60
-        ``foam_5k``             jca   [1] 11.3     5      0.98  1.1   150    216     33
-        ``foam_6.6k``           jca   [1] 11.9     6.6    0.98  1.03  200    380     11.2
-        ``foam_10.9k``          jca   [1] 11.5 (3) 10.9   0.99  1.02  100    130     8.8
-        ``foam_12.6k``          jca   [1] 13.1     12.569 0.99  1.02  78     192     8.85
-        ``foam_22k``            jca   [1] 11.6     22     0.98  1.9   87     146     30
-        ``foam_22.1k``          jca   [1] 8.1 (2)  22.1   0.97  2.2   39     275     24.5
-        ``felt_23k``            jca   [1] 11.5 (1) 23     0.99  1.4   64     131     66
-        ``glass_wool_24.3k``    jcal  [3] I, II    24.3   0.988 1.01  63     137     53   3.1e-09
-        ``soft_fibrous_25k``    jca   [1] 11.2     25     0.98  1.02  90     180     30
-        ``fibrous_layer_33k``   jca   [1] 11.7     33     0.98  1.1   50     110     60
-        ``fibrous_blanket_34k`` jca   [1] 11.4 (1) 34     0.98  1.18  60     86      41
-        ``mineral_wool_34k``    jca   [1] 12.2     34     0.95  1     40     80      90
-        ``glass_wool_40k``      jca   [1] 11.8     40     0.94  1.06  56     110     130
-        ``foam_50k``            jca   [1] 8.1 (1)  50     0.98  1.4   50     150     25
-        ``rock_wool_51.2k``     jcal  [3] I, II    51.2   0.97  1.06  41     59      183  1.2e-09
-        ``foam_65k``            jca   [1] 11.4 (4) 65     0.99  1.98  37     120     16
-        ``foam_87k``            jca   [1] 11.4 (3) 87     0.97  2.52  36     118     31
-        ``rock_wool_135k``      jcal  [1] 13.2     135    0.94  2.1   49     166     130  3.3e-09
-        ======================= ===== ============ ====== ===== ===== ====== ======= ==== ========
+        ======================= ===== ============ ====== ===== ====== ====== ======= ===== ========
+        ``preset``              model Source       sigma  phi   alpha  Lambda Lambda' rho1  q0'
+        ======================= ===== ============ ====== ===== ====== ====== ======= ===== ========
+        ``foam_2.3k``           jcal  [3] I, II    2.3    0.96  1.28   202    376     60    1.67e-08
+        ``polyester_4.1k``      jca   [6] 2 (14)   4.1    0.964 1.0354 269    541     49.9
+        ``carpet_5k``           jca   [1] 11.7     5      0.99  1      23     28      60
+        ``foam_5k``             jca   [1] 11.3     5      0.98  1.1    150    216     33
+        ``polyester_5.7k``      jca   [6] 2 (15)   5.7    0.953 1.0464 206    399     64.4
+        ``foam_6.6k``           jca   [1] 11.9     6.6    0.98  1.03   200    380     11.2
+        ``polyester_9.8k``      jca   [6] 2 (12)   9.8    0.964 1.0328 152    292     49.8
+        ``foam_10.9k``          jca   [1] 11.5 (3) 10.9   0.99  1.02   100    130     8.8
+        ``glass_wool_11.9k``    jca   [6] 1 (1)    11.9   0.989 1.0108 143    302     28
+        ``foam_12.6k``          jca   [1] 13.1     12.569 0.99  1.02   78     192     8.85
+        ``glass_wool_16.8k``    jca   [6] 1 (2)    16.8   0.987 1.0093 132    237     31.8
+        ``polyester_17.4k``     jca   [6] 2 (13)   17.4   0.947 1.0494 113    218     72.8
+        ``polyester_19.7k``     jca   [6] 2 (10)   19.7   0.974 1.0206 125    221     35.9
+        ``glass_wool_21.5k``    jca   [6] 1 (3)    21.5   0.983 1.0124 106    225     41.7
+        ``foam_22k``            jca   [1] 11.6     22     0.98  1.9    87     146     30
+        ``foam_22.1k``          jca   [1] 8.1 (2)  22.1   0.97  2.2    39     275     24.5
+        ``felt_23k``            jca   [1] 11.5 (1) 23     0.99  1.4    64     131     66
+        ``glass_wool_24.3k``    jcal  [3] I, II    24.3   0.988 1.01   63     137     53    3.1e-09
+        ``soft_fibrous_25k``    jca   [1] 11.2     25     0.98  1.02   90     180     30
+        ``glass_wool_29k``      jca   [6] 1 (4)    29     0.979 1.0144 87     184     52.6
+        ``fibrous_layer_33k``   jca   [1] 11.7     33     0.98  1.1    50     110     60
+        ``fibrous_blanket_34k`` jca   [1] 11.4 (1) 34     0.98  1.18   60     86      41
+        ``mineral_wool_34k``    jca   [1] 12.2     34     0.95  1      40     80      90
+        ``glass_wool_40k``      jca   [1] 11.8     40     0.94  1.06   56     110     130
+        ``glass_wool_49k``      jca   [6] 1 (5)    49     0.968 1.0295 57     123     81.2
+        ``foam_50k``            jca   [1] 8.1 (1)  50     0.98  1.4    50     150     25
+        ``polyester_51k``       jca   [6] 2 (11)   51     0.947 1.0471 67     128     72.9
+        ``rock_wool_51.2k``     jcal  [3] I, II    51.2   0.97  1.06   41     59      183   1.2e-09
+        ``foam_65k``            jca   [1] 11.4 (4) 65     0.99  1.98   37     120     16
+        ``glass_wool_69.9k``    jca   [6] 1 (6)    69.9   0.96  1.0358 48     97      101.2
+        ``foam_87k``            jca   [1] 11.4 (3) 87     0.97  2.52   36     118     31
+        ``rock_wool_135k``      jcal  [1] 13.2     135    0.94  2.1    49     166     130   3.3e-09
+        ======================= ===== ============ ====== ===== ====== ====== ======= ===== ========
 
-        Units are those of the Parameters below. The number in brackets after a table is its layer or material row.
-        ``soft_fibrous_25k`` is also the material of Panneton [2], Table 1. The [3] sets were measured in [3]: the
-        viscous parameters with the inversion method of [4] and the thermal ones by fitting the Lafarge et al. model
-        of [5] to measured bulk moduli. ``glass_wool_40k`` is the glass wool "Domisol Coffrage" of Saint-Gobain
-        Isover ([1], section 6.5.4); the sources name no other product.
+        Units are those of the Parameters below. The number in brackets after a table is its layer, material or sample
+        number. ``soft_fibrous_25k`` is also the material of Panneton [2], Table 1. The [3] sets were measured in [3]:
+        the viscous parameters with the inversion method of [4] and the thermal ones by fitting the Lafarge et al. model
+        of [5] to measured bulk moduli. The [6] sets are six glass wool samples of nominal 7 µm fibres and polyester of
+        three fibre diameters, two densities each. [6] measured the flow resistivity, tortuosity and both characteristic
+        lengths, and calculated the porosity from the bulk density with fibre densities of 2500 kg/m³ (glass) and
+        1380 kg/m³ (polyester). ``glass_wool_40k`` is the glass wool "Domisol Coffrage" of Saint-Gobain Isover ([1],
+        section 6.5.4); the sources name no other product.
 
         Parameters
         ----------
@@ -2007,6 +2007,8 @@ class TMM:
         [5] D. Lafarge, P. Lemarinier, J. F. Allard and V. Tarnow, "Dynamic compressibility of air in porous
             structures at audible frequencies", Journal of the Acoustical Society of America, vol. 102,
             pp. 1995-2006, 1997.
+        [6] N. Kino and T. Ueno, "Experimental determination of the micro- and macrostructural parameters
+            influencing the acoustical performance of fibrous media", Applied Acoustics, vol. 68, pp. 1439-1458, 2007.
         """
         preset_overrides = None
         given = {"sigma": sigma, "porosity": porosity, "tortuosity": tortuosity, "viscous_length": viscous_length,
