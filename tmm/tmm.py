@@ -2184,7 +2184,8 @@ class TMM:
         Without it, a membrane over a lossless air space absorbs nothing.
 
         The model neglects bending stiffness and finite-panel modal behavior. It is appropriate for a limp
-        local-reaction mass sheet, not a full structural panel model.
+        local-reaction mass sheet, not a full structural panel model. ``thin_plate_layer`` adds the bending stiffness of
+        an infinite plate, which changes the impedance at oblique incidence near and above the critical frequency.
 
         Parameters
         ----------
@@ -2227,6 +2228,121 @@ class TMM:
                               "thickness [mm]": t,
                               "density [kg/m³]": rho,
                               "mechanical_resistance [-]": mechanical_resistance or None,
+                              "matrix": Tm,
+                              }
+
+    def thin_plate_layer(self, t=12.5, rho=800, E=4.1, nu=0.3, loss_factor=0.01, layer=None, *,
+                         mechanical_resistance=0):
+        """
+        Add an infinite thin plate with bending stiffness as a series-impedance layer.
+
+        The plate is a Kirchhoff plate with surface mass ``m = rho*t`` and bending stiffness
+        ``D = E*t**3/(12*(1 - nu**2))``, where ``t`` and ``E`` are converted to meters and pascals. At the trace
+        wavenumber ``kx = k0*sin(theta)`` of the incident wave its specific impedance is
+        ``Z_w = eta*A + 1j*(omega*m - A)`` with ``A = D*kx**4/omega`` and ``eta`` the loss factor, Vigran [1], section
+        6.5.1.2, equation 6.90 with the complex stiffness ``D*(1 + 1j*eta)``. With the critical frequency
+        ``f_c = c0**2/(2*pi)*sqrt(m/D)`` this is ``1j*omega*m*(1 - (f/f_c)**2*(1 + 1j*eta)*sin(theta)**4)``, Vigran [1],
+        equation 6.91, and Mechel [2], section I.8, equation 11.
+        The transfer matrix is ``[[1, Z/S0], [0, 1]]`` with ``Z = Z_w + r_m*rho0*c0``. ``kx`` is the same in every
+        layer, so ``A`` does not depend on the media next to the plate. The mounting resistance ``r_m`` is the membrane
+        resistance ``r'`` of Kang and Fuchs [3], equation 1, added to the plate impedance as a package extension.
+
+        Compared with ``membrane_layer``, the plate adds the bending term ``A``. At normal incidence ``A = 0`` and the
+        layer is identical to ``membrane_layer`` with the same ``t``, ``rho`` and ``mechanical_resistance``. At oblique
+        incidence the stiffness lowers the mass reactance by the fraction ``(f/f_c)**2*sin(theta)**4``, which is small
+        well below ``f_c``. At ``f = f_c/sin(theta)**2`` the reactance vanishes (coincidence) and the impedance is
+        ``eta*omega*m + r_m*rho0*c0``. Above it the stiffness dominates. ``eta`` acts only through ``A``, so it does not
+        damp the plate at normal incidence or well below ``f_c``. A resonant panel absorber still needs
+        ``mechanical_resistance`` or a damped cavity. Neither layer models finite size, edge conditions or panel modes.
+
+        Parameters
+        ----------
+        t : float, optional
+            Plate thickness [mm]
+        rho : float, optional
+            Plate density [kg/m³]
+        E : float, optional
+            Young's modulus [GPa]
+        nu : float, optional
+            Poisson's ratio [-]
+        loss_factor : float, optional
+            Loss factor ``eta`` of the bending stiffness [-]
+        layer : None or int, optional
+            Optional layer index. If ``None``, the layer is appended.
+        mechanical_resistance : float, optional
+            Mechanical loss resistance ``r_m`` of the plate motion, mainly from mounting losses, normalized by
+            ``rho0*c0`` [-].
+
+        Notes
+        -----
+        Thin-plate theory holds while the bending wavelength is longer than six plate thicknesses ([1], section
+        3.7.3.1; [4], section 5.2.7.1). A ``UserWarning`` is raised when the frequency range goes above this limit and
+        an incidence angle is oblique. At normal incidence the bending term is zero and the limit does not apply.
+
+        With a small loss factor and no other loss in the stack, the mass-spring resonance behind the plate is narrow
+        and moves with the angle of incidence. Diffuse results then depend on the ``incidence_angle`` step, as they do
+        for ``membrane_layer`` with a small resistance. A finer step or a porous layer in the cavity resolves the
+        resonance, and a larger ``mechanical_resistance`` widens it.
+
+        References
+        ----------
+        [1] T. E. Vigran, "Building Acoustics", Taylor & Francis, 2008.
+        [2] F. P. Mechel (ed.), "Formulas of Acoustics", 2nd edition, Springer, Berlin, 2008.
+        [3] J. Kang and H. V. Fuchs, "Predicting the absorption of open weave textiles and micro-perforated
+            membranes backed by an air space", Journal of Sound and Vibration, vol. 220, pp. 905-920, 1999.
+        [4] T. E. Vigran, "Manual for NorFLAG, version 4.0", Trondheim, 2018.
+        """
+        values = (t, rho, E, nu, loss_factor, mechanical_resistance)
+        if not all(np.isfinite(float(value)) for value in values):
+            raise ValueError("thin_plate_layer needs finite t, rho, E, nu, loss_factor and mechanical_resistance.")
+        if t <= 0 or rho <= 0 or E <= 0:
+            raise ValueError("thin_plate_layer needs t > 0, rho > 0 and E > 0.")
+        if not -1 < nu < 0.5:
+            raise ValueError("nu must lie between -1 and 0.5.")
+        if loss_factor < 0:
+            raise ValueError("loss_factor must not be negative.")
+        if mechanical_resistance < 0:
+            raise ValueError("mechanical_resistance must not be negative.")
+
+        t_meters = t / 1000
+        mass = rho * t_meters
+        stiffness = E * 1e9 * t_meters ** 3 / (12 * (1 - nu ** 2))
+        # Bending wavelength 2*pi/k_B equals 6*t where k_B**2 = omega*sqrt(m/D).
+        f_thin = (2 * np.pi / (6 * t_meters)) ** 2 * np.sqrt(stiffness / mass) / (2 * np.pi)
+        # The bending term is zero at normal incidence, so the limit only matters when an oblique angle is computed.
+        # checked_fmax records the highest frequency the limit was checked against (0 when no angle was oblique).
+        checked_fmax = float(np.max(self.freq)) if self._has_oblique_angle() else 0.0
+        if checked_fmax > f_thin:
+            warnings.warn(f"thin_plate_layer: the bending wavelength is shorter than 6 plate thicknesses above "
+                          f"{f_thin:.0f} Hz, where thin-plate theory loses accuracy.", UserWarning, stacklevel=2)
+
+        omega = self.w0[:, None]
+        sin_theta = np.sin(np.deg2rad(np.asarray(self.incidence_angle, dtype=float)))[None, :]
+        # A = D*kx**4/omega with kx = omega*sin(theta)/c0, written without the division so that f = 0 stays finite.
+        bending = stiffness * omega ** 3 * (sin_theta / self.c0) ** 4
+        zc = (mechanical_resistance * self.rho0 * self.c0 + loss_factor * bending
+              + 1j * (omega * mass - bending)) / self.s0
+        zc = np.broadcast_to(zc, (len(self.freq), len(self.incidence_angle)))
+
+        ones = np.ones_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
+        zeros = np.zeros_like(self.freq, shape=(len(self.freq), len(self.incidence_angle)))
+
+        Tm = np.array([[ones, zc],
+                       [zeros, ones]])
+
+        if layer is None:
+            layer = len(self.matrix)
+
+        self.matrix[layer] = {"type": "thin_plate_layer",
+                              "thickness [mm]": t,
+                              "density [kg/m³]": rho,
+                              "young_modulus [GPa]": E,
+                              "poisson_ratio [-]": nu,
+                              "loss_factor [-]": loss_factor,
+                              "mechanical_resistance [-]": mechanical_resistance or None,
+                              "critical_frequency [Hz]": float(self.c0 ** 2 / (2 * np.pi) * np.sqrt(mass / stiffness)),
+                              "thin_plate_limit [Hz]": float(f_thin),
+                              "checked_fmax [Hz]": checked_fmax,
                               "matrix": Tm,
                               }
 
@@ -4208,12 +4324,25 @@ class TMM:
         reduced._z_angle_angles = new_angles
         return reduced
 
+    def _has_oblique_angle(self):
+        """Return True when any computed incidence angle is not zero."""
+        return bool(np.any(np.asarray(self.incidence_angle, dtype=float) != 0))
+
     def _add_layer_from_record(self, key, value):
         """Re-create one stored layer at ``key`` from its ``self.matrix`` metadata."""
-        # The record holds checked values, so a cone-angle warning was already given when the layer was made.
+        # The record holds checked values, so a cone-angle warning was already given when the layer was made. The
+        # thin-plate warning depends on the frequency range, so it is given again only when the range now goes above
+        # the plate's limit and the range checked when the layer was made did not.
+        limit = value.get("thin_plate_limit [Hz]") if value.get("type") == "thin_plate_layer" else None
+        checked = value.get("checked_fmax [Hz]")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message=r".*method='conical'\): the aperture half-angle")
+            warnings.filterwarnings("ignore", message=r"thin_plate_layer: the bending wavelength")
             self._add_layer_from_record_inner(key, value)
+        if (limit is not None and self._has_oblique_angle() and np.max(self.freq) > limit
+                and (checked is None or checked <= limit)):
+            warnings.warn(f"thin_plate_layer: the bending wavelength is shorter than 6 plate thicknesses above "
+                          f"{limit:.0f} Hz, where thin-plate theory loses accuracy.", UserWarning, stacklevel=3)
 
     def _add_layer_from_record_inner(self, key, value):
         """Re-create one stored layer at ``key``; see ``_add_layer_from_record``."""
@@ -4281,6 +4410,14 @@ class TMM:
                                 rho=value["density [kg/m³]"],
                                 layer=key,
                                 mechanical_resistance=value.get("mechanical_resistance [-]") or 0)
+        elif value["type"] == "thin_plate_layer":
+            self.thin_plate_layer(t=value["thickness [mm]"],
+                                  rho=value["density [kg/m³]"],
+                                  E=value["young_modulus [GPa]"],
+                                  nu=value["poisson_ratio [-]"],
+                                  loss_factor=value["loss_factor [-]"],
+                                  layer=key,
+                                  mechanical_resistance=value.get("mechanical_resistance [-]") or 0)
         elif value["type"] == "porous_facing_layer":
             open_area = value["open_area [%]"]
             self.porous_facing_layer(t=value["thickness [mm]"],
@@ -4477,6 +4614,17 @@ class TMM:
                         f"{self._mechanical_resistance_arg(value)}"
                         f")"
                         )
+                elif value["type"] == "thin_plate_layer":
+                    logged_calls.append(
+                        f"{self.filename}.thin_plate_layer("
+                        f"t={self._log_number(value['thickness [mm]'])}, "
+                        f"rho={self._log_number(value['density [kg/m³]'])}, "
+                        f"E={self._log_number(value['young_modulus [GPa]'])}, "
+                        f"nu={self._log_number(value['poisson_ratio [-]'])}, "
+                        f"loss_factor={self._log_number(value['loss_factor [-]'])}"
+                        f"{self._mechanical_resistance_arg(value)}"
+                        f")"
+                        )
                 elif value["type"] == "porous_facing_layer":
                     free_arg = f", free={value['free']}" if "free" in value else ""
                     logged_calls.append(
@@ -4564,6 +4712,26 @@ class TMM:
         """Return True for real scalar values that can be formatted numerically."""
         return isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, (bool, np.bool_))
 
+    @staticmethod
+    def _report_number(value):
+        """
+        Return ``value`` as report text: two decimals at or above 1, more below 1.
+
+        Values below 1 get four significant digits within two to six decimals, without trailing zeros past the second,
+        so a loss factor of 0.015 prints as ``0.015`` and 0.3 as ``0.30``. Nonzero values below 1e-6 use three
+        significant digits in exponent form, so they do not print as zero. Non-finite values print as they are.
+        """
+        value = float(value)
+        if not np.isfinite(value):
+            return str(value)
+        if value == 0 or abs(value) >= 1:
+            return f"{value:0.2f}"
+        if abs(value) < 1e-6:
+            return f"{value:.3g}"
+        decimals = min(6, max(2, 3 - int(np.floor(np.log10(abs(value))))))
+        text = f"{value:0.{decimals}f}".rstrip("0")
+        return text if len(text.split(".")[1]) >= 2 else f"{value:0.2f}"
+
     def _layer_report_items(self, layer_data, layer_key=None):
         """
         Return ordered, method-aware layer fields for text and spreadsheet reports.
@@ -4610,6 +4778,9 @@ class TMM:
             keys = ["type", "thickness [mm]"]
         elif layer_type == "membrane_layer":
             keys = ["type", "thickness [mm]", "density [kg/m³]", "mechanical_resistance [-]"]
+        elif layer_type == "thin_plate_layer":
+            keys = ["type", "thickness [mm]", "density [kg/m³]", "young_modulus [GPa]", "poisson_ratio [-]",
+                    "loss_factor [-]", "critical_frequency [Hz]", "thin_plate_limit [Hz]", "mechanical_resistance [-]"]
         elif layer_type == "porous_facing_layer":
             keys = ["type", "method", "thickness [mm]", "surface_mass [kg/m2]", "resistance [Pa*s/m]"]
             if method == "rebillard":
@@ -4758,9 +4929,9 @@ class TMM:
                 if self._is_report_number(value):
                     if "[mm]" in key:
                         converted = key.replace("[mm]", conversion[1])
-                        print(f"\t{key}: {value:0.2f} | {converted}: {value * conversion[0]:0.2f}")
+                        print(f"\t{key}: {self._report_number(value)} | {converted}: {value * conversion[0]:0.2f}")
                     else:
-                        print(f"\t{key}: {value:0.2f}")
+                        print(f"\t{key}: {self._report_number(value)}")
                     if "thickness" in key:
                         total_depth += value
                 else:

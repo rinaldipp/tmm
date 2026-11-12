@@ -29,6 +29,7 @@ FOUR_PI_SQUARED = 4 * np.pi ** 2
 UNSUPPORTED_POROSITY_TYPES = {
     "membrane_layer": "a membrane adds static compliance from its own tension and stiffness, which Wood's law "
                       "discards by assuming a rigid solid phase",
+    "thin_plate_layer": "a plate is an impervious solid layer with no air volume fraction for Wood's law",
     "constant_z": "a constant-impedance termination carries no thickness or porosity metadata",
 }
 
