@@ -341,7 +341,7 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                 curve_label = (label_name + _absorption_curve_label(tmm, compact=True)
                                if label_name else _absorption_curve_label(tmm))
                 ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, label=curve_label, c=primary_color)
-            if max_mode and not np.isclose(tmm.first_peak[0], max(tmm.freq)):
+            if max_mode and np.nanmax(tmm.alpha) > 0 and not np.isclose(tmm.first_peak[0], max(tmm.freq)):
                 ax[i].axvline(x=tmm.first_peak[0],
                               label=_peak_label(tmm, single_treatment),
                               linestyle=":",
@@ -470,10 +470,8 @@ def oct_filter(narrowband_freq, narrowband_value, freq_bands, filtered_value, n_
     ax2.set_xscale(x_scale)
     ax2.set_xlabel(f"1/{n_oct} Octave Bands [Hz]", fontsize=base_fontsize)
     ax2.set_xticks([freq for freq in freq_bands.tolist()])
-    bands_ticklabels = [f"{freq:0.1f}" for freq in freq_bands.tolist()]
-    for b in range(len(bands_ticklabels)):
-        bands_ticklabels[b] = int(freq_bands.tolist()[b]) if float(freq_bands.tolist()[b]).is_integer() is True \
-            else float(bands_ticklabels[b])
+    # Nominal frequencies are already rounded to their label (IEC 61260-1, Annex E), so print them as they are.
+    bands_ticklabels = [f"{freq:g}" for freq in freq_bands.tolist()]
     ax2.set_xticklabels(bands_ticklabels)
     ax2.tick_params(which="major", length=5, rotation=-90, axis="x")
     ax2.tick_params(axis='both', labelsize=base_fontsize - 2)
@@ -679,11 +677,7 @@ def _fractional_octave_average(freq, values, n_oct):
     """Return band centres and band means, dropping bands that contain no frequency samples."""
     from tmm import _utils as utils
 
-    bands = utils.nth_octave(n_oct, fmin=float(np.min(freq)), fmax=float(np.max(freq)))
-    masks = [(lower <= freq) & (freq < upper) for lower, _, upper in bands]
-    filled = [i for i, mask in enumerate(masks) if np.any(mask)]
-    means = np.array([np.mean(values[masks[i]]) for i in filled])
-    return bands[filled, 1], means
+    return utils.band_average(np.asarray(freq, dtype=float), np.asarray(values), n_oct)
 
 
 def finite_sample_data(tmm, sample_size=3.162, variants=None, n_oct=None, fig=None, ax=None, gs=None, figsize=None,

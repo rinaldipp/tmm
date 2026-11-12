@@ -1,19 +1,21 @@
 """
-Utility functions.
+Utility functions for air properties and for fractional-octave bands per IEC 61260-1 [1] and ANSI S1.11 [2].
+
+References
+----------
+[1] IEC 61260-1:2014, "Electroacoustics - Octave-band and fractional-octave-band filters - Part 1: Specifications",
+    International Electrotechnical Commission, 2014.
+[2] ANSI S1.11-2004, "Specification for Octave-Band and Fractional-Octave-Band Analog and Digital Filters",
+    Acoustical Society of America, 2004 (reaffirmed 2009).
 
 For further information check the function specific documentation.
 """
 import numpy as np
 import scipy
 
-# Nominal frequencies to calculate octave bands with the 1kHz band as reference using bases 10 or 2
-base_nominal_frequencies = np.array([
-    0.1, 0.125, 0.16, 0.2, 0.25, 0.315, 0.4, 0.5, 0.6, 3., 0.8,
-    1., 1.25, 1.6, 2., 2.5, 3.15, 4., 5., 6.3, 8., 10., 12.5, 16.,
-    20., 25., 31.5, 40., 50., 63., 80., 100., 125., 160., 200., 250.,
-    315., 400., 500., 630., 800., 1000., 1250., 1600., 2000., 2500.,
-    3150., 4000., 5000., 6300., 8000., 10000., 12500., 16000., 20000.
-])
+# Nominal mid-band frequencies of octave and one-third-octave bands in IEC 61260-1:2014, Table E.1, as hundredths of
+# their decade, which clause E.1 extends to any decade by placing the decimal sign. Integers keep the labels exact.
+NOMINAL_HUNDREDTHS = np.array([100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000])
 
 class AirProperties:
     """
@@ -168,6 +170,10 @@ def filter_values(freq, values, n_oct=1):
     """
     Average ``values`` into fractional-octave bands.
 
+    When the first spacing of ``freq`` is wider than the spacing of the first two band centres, the values are first
+    interpolated linearly onto the original frequencies together with a geometric grid of eight points per band, so
+    every band gets samples and no original sample is lost. ``band_average`` then averages them.
+
     Parameters
     ----------
     freq : ndarray
@@ -180,99 +186,218 @@ def filter_values(freq, values, n_oct=1):
     Returns
     -------
     bands : ndarray
-        Centre frequencies of the bands that fit inside ``freq``.
+        Nominal mid-band frequencies of the bands of ``nth_octave`` over ``freq`` that hold at least one sample.
     result : ndarray
-        Band-averaged values.
+        Band-averaged values, one per entry of ``bands``.
     """
-    bands = nth_octave(n_oct, fmin=min(freq), fmax=max(freq))
-    df_bands = bands[1][1] - bands[0][1]
-    df_freq = freq[1] - freq[0]
-    if df_bands < df_freq:
-        interp_fun = scipy.interpolate.interp1d(freq, values)
-        freq = np.linspace(min(freq), max(freq), int((max(freq) - min(freq) - 1) / df_bands))
-        values = interp_fun(freq)
-        
-    edges = np.delete(bands, 1, axis=1)
-    lidx = np.searchsorted(freq, edges[:, 0], 'right')
-    ridx = np.searchsorted(freq, edges[:, 1], 'left')
-    result = np.array([np.sum(values[i:j]) / len(values[i:j]) for (i, j) in zip(lidx, ridx) if values[i:j].size > 0])
+    freq = np.asarray(freq, dtype=float)
+    values = np.asarray(values)
+    b = _validated_fraction(n_oct)
+    bands = nth_octave(b, fmin=min(freq), fmax=max(freq))
+    if len(freq) > 1:
+        df_bands = bands[1][1] - bands[0][1] if len(bands) > 1 else bands[0][2] - bands[0][0]
+        if df_bands < freq[1] - freq[0]:
+            per_band = 8
+            count = int(np.ceil(b * np.log(freq[-1] / freq[0]) / np.log(10 ** (3 / 10)) * per_band)) + 1
+            fine = np.union1d(freq, np.geomspace(freq[0], freq[-1], max(count, 2)))
+            values = scipy.interpolate.interp1d(freq, values)(fine)
+            freq = fine
+    return band_average(freq, values, b)
 
-    return bands[:, 1], result.astype(values.dtype)
+
+def band_average(freq, values, n_oct):
+    """
+    Average ``values`` over the bands of ``nth_octave`` that cover ``freq``, without interpolation.
+
+    Each sample goes to the band whose index it rounds to, with the tolerance ``nth_octave`` uses to choose its bands,
+    so every sample is counted exactly once and a sample on an edge belongs to the upper band. Samples outside the
+    bands, which can only be the end samples within rounding, go to the first or last band.
+
+    Parameters
+    ----------
+    freq : ndarray
+        Frequency axis [Hz], positive.
+    values : ndarray
+        Values to average, same length as ``freq``.
+    n_oct : int
+        Bandwidth denominator ``b``.
+
+    Returns
+    -------
+    bands : ndarray
+        Nominal mid-band frequencies of the bands that hold at least one sample.
+    result : ndarray
+        Band-averaged values, one per entry of ``bands``, as float, or complex for complex ``values``.
+    """
+    freq = np.asarray(freq, dtype=float)
+    values = np.asarray(values)
+    b = _validated_fraction(n_oct)
+    first, last = _band_range(b, float(np.min(freq)), float(np.max(freq)))
+    bands = nth_octave(b, float(np.min(freq)), float(np.max(freq)))
+    member = np.clip(np.floor(_band_index(freq, b) + 0.5 + 1e-9).astype(int), first, last) - first
+    counts = np.bincount(member, minlength=len(bands))
+    sums = np.bincount(member, weights=values.real.astype(float), minlength=len(bands))
+    if np.iscomplexobj(values):
+        sums = sums + 1j * np.bincount(member, weights=values.imag.astype(float), minlength=len(bands))
+    filled = counts > 0
+    # Means are float (complex for complex input) whatever the input type, so integer values are not truncated.
+    return bands[filled, 1], sums[filled] / counts[filled]
+
+
+def _band_range(b, fmin, fmax):
+    """Return the first and last band index of ``nth_octave`` for ``fmin`` and ``fmax``."""
+    first = int(np.floor(_band_index(fmin, b) + 0.5 + 1e-9))
+    last = max(first, int(np.ceil(_band_index(fmax, b) - 0.5 - 1e-9)))
+    return first, last
+
+
+def _band_index(f, b):
+    """Return the band index ``x`` of ``nth_octave`` as a real number, so a band covers ``x - 0.5`` to ``x + 0.5``."""
+    g = 10 ** (3 / 10)
+    octaves = np.log(np.asarray(f, dtype=float) / 1000) / np.log(g)
+    return 30 + b * octaves if b % 2 else (59 + 2 * b * octaves) / 2
+
+
+def _validated_fraction(fraction):
+    """Return the bandwidth denominator ``b`` as an int, refusing values that are not positive integers."""
+    value = float("nan")
+    if not isinstance(fraction, (bool, np.bool_, str, bytes)):
+        try:
+            value = float(fraction)
+        except (TypeError, ValueError):
+            pass
+    if not np.isfinite(value) or value % 1 or value < 1:
+        raise ValueError(f"fraction must be a positive integer bandwidth denominator, got {fraction!r}.")
+    return int(value)
 
 
 def nth_octave(fraction, fmin=20, fmax=20000):
     """
-    Return fractional-octave band centres and edges per ANSI S1.11-2004 and IEC 61260-1:2014.
+    Return fractional-octave band centres and edges per IEC 61260-1:2014 and ANSI S1.11-2004.
+
+    With ``G = 10**(3/10)`` (IEC 61260-1, Formula 1), integer band index ``x`` and bandwidth designator ``1/b``, the
+    exact mid-band frequencies are ``fm = 1000*G**(x/b)`` for odd ``b`` and ``fm = 1000*G**((2*x + 1)/(2*b))`` for even
+    ``b`` (Formulas 2 and 3), and the band edges are ``fm*G**(-1/(2*b))`` and ``fm*G**(1/(2*b))`` (Formulas 4 and 5).
+    The code numbers the bands as ANSI S1.11-2004 does (equations 3 and 4): the ANSI band number minus 30 is the IEC
+    index ``x``. The bands run from the one that contains ``fmin`` to the first one whose upper edge reaches ``fmax``,
+    with no other limit on the range, and a frequency on an edge counts in the upper band. Neighbouring bands share one
+    computed edge value. Each band is labelled with its nominal mid-band frequency, see ``nominal_frequency``.
 
     Parameters
     ----------
     fraction : int
         Bandwidth denominator ``b``: ``1`` for octave bands, ``3`` for third-octave bands.
     fmin : float, optional
-        Lowest frequency the bands must cover [Hz].
+        Lowest frequency the bands must cover [Hz]. Must be positive.
     fmax : float, optional
-        Highest frequency the bands must cover [Hz].
+        Highest frequency the bands must cover [Hz]. Must not be below ``fmin``.
 
     Returns
     -------
     ndarray
-        Shape ``(n_bands, 3)``: lower edge, nominal centre frequency and upper edge of each band [Hz].
+        Shape ``(n_bands, 3)``: lower edge, nominal mid-band frequency and upper edge of each band [Hz].
     """
-    limits = [fmin, fmax]
+    b = _validated_fraction(fraction)
+    try:
+        if isinstance(fmin, (str, bytes, bool, np.bool_)) or isinstance(fmax, (str, bytes, bool, np.bool_)):
+            raise TypeError
+        fmin, fmax = float(fmin), float(fmax)
+    except (TypeError, ValueError):
+        fmin = fmax = float("nan")
+    if not (np.isfinite(fmin) and np.isfinite(fmax)) or fmin <= 0 or fmax < fmin:
+        raise ValueError("Fractional-octave bands need a positive, finite fmin and a finite fmax at or above it [Hz].")
 
-    # Octave ratio g (ANSI s1.11, 3.2, pg. 2)
-    g = 10 ** (3 / 10)  # Or g = 2
-    # Reference frequency (ANSI s1.11, 3.4, pg. 2)
-    fr = 1000
+    g = 10 ** (3 / 10)
+    first, last = _band_range(b, fmin, fmax)
+    exact = ratio(g, np.arange(first, last + 1), b) * 1000
+    upper = exact * bandedge(g, b)
+    lower = np.concatenate(([exact[0] / bandedge(g, b)], upper[:-1]))
+    return np.array([lower, nominal_frequency(exact, b), upper]).T
 
-    # Get starting index 'x' and first center frequency
-    x = initindex(limits[0], fr, g, fraction)
-    freq = ratio(g, x, fraction) * fr
-    freq = find_nearest(base_nominal_frequencies, freq)[0]
 
-    # Get each frequency until reach maximum frequency
-    freq_x = 0
-    while freq_x * bandedge(g, fraction) < limits[1]:
-        # Increase index
-        x = x + 1
-        # New frequency
-        freq_x = ratio(g, x, fraction) * fr
-        freq_x = find_nearest(base_nominal_frequencies, freq_x)[0]
+def nominal_frequency(exact, fraction):
+    """
+    Return the nominal mid-band frequency of each exact mid-band frequency per IEC 61260-1:2014, Annex E.
 
-        # Store new frequency
-        freq = np.append(freq, freq_x)
+    Octave and one-third-octave bands take the values of Table E.1, extended to any decade (clause E.1). One-half-octave
+    bands round to three significant digits (E.2). Bands from 1/4 to 1/24 octave round to three significant digits when
+    the leading digit is 1 to 4 and to two when it is 5 to 9 (E.3.2 and E.3.3). Narrower bands add digits until the
+    labels are unique in any 10:1 frequency ratio (E.3.5).
 
-    # Get band-edges
-    freq_d = freq / bandedge(g, fraction)
-    freq_u = freq * bandedge(g, fraction)
+    Parameters
+    ----------
+    exact : ndarray
+        Exact mid-band frequencies [Hz].
+    fraction : int
+        Bandwidth denominator ``b``.
 
-    return np.array([freq_d, freq, freq_u]).T
+    Returns
+    -------
+    ndarray
+        Nominal mid-band frequencies [Hz].
+    """
+    exact = np.asarray(exact, dtype=float)
+    b = _validated_fraction(fraction)
+    exponent = np.floor(np.log10(exact)).astype(int)
+    if b in (1, 3):
+        hundredths = exact / 10.0 ** exponent * 100
+        nearest = np.argmin(np.abs(np.log(hundredths[..., None] / NOMINAL_HUNDREDTHS)), axis=-1)
+        return _place_decimal(NOMINAL_HUNDREDTHS[nearest], exponent - 2)
+
+    def rounded(values, extra):
+        power = np.floor(np.log10(values)).astype(int)
+        leading = np.floor(values / 10.0 ** power)
+        digits = 3 if b == 2 else np.where(leading <= 4, 3, 2)
+        place = power - digits - extra + 1
+        return _place_decimal(np.round(_place_decimal(values, -place)), place)
+
+    extra = 0
+    if b > 24:
+        # The base-ten bands repeat, a decimal place up, every 10*b indices (G**10 = 1000), so three decades hold every
+        # pair of neighbours; labels that rise strictly there are unique in any 10:1 frequency ratio.
+        start = int(np.floor(_band_index(1000, b)))
+        span = ratio(10 ** (3 / 10), np.arange(start, start + 10 * b + 2), b) * 1000
+        while not np.all(np.diff(rounded(span, extra)) > 0):
+            extra += 1
+    return rounded(exact, extra)
+
+
+def _place_decimal(values, places):
+    """
+    Return ``values * 10**places`` with the shift done by an exact power of ten, so 237 at ``-1`` gives 23.7 and not
+    23.700000000000003.
+    """
+    values = np.asarray(values, dtype=float)
+    places = np.broadcast_to(np.asarray(places), values.shape)
+    scale = 10.0 ** np.abs(places)
+    return np.where(places >= 0, values * scale, values / scale)
 
 
 def band_edges(freq, fraction):
     """
-    Return band edges for given centre frequencies per ANSI S1.11-2004 and IEC 61260-1:2014.
+    Return band edges for given nominal mid-band frequencies per IEC 61260-1:2014, Formulas 4 and 5.
+
+    Each nominal frequency is matched to the nearest exact mid-band frequency of ``nth_octave``, and the edges come from
+    that exact frequency.
 
     Parameters
     ----------
     freq : ndarray
-        Band centre frequencies [Hz].
+        Nominal mid-band frequencies [Hz].
     fraction : int
         Bandwidth denominator ``b``, as in ``nth_octave``.
 
     Returns
     -------
     ndarray
-        Shape ``(len(freq), 3)``: lower edge, centre frequency and upper edge of each band [Hz].
+        Shape ``(len(freq), 3)``: lower edge, nominal mid-band frequency and upper edge of each band [Hz].
     """
-    # Octave ratio g (ANSI s1.11, 3.2, pg. 2)
-    g = 10 ** (3 / 10)  # Or g = 2
-
-    # Get band-edges
-    freq_d = freq / bandedge(g, fraction)
-    freq_u = freq * bandedge(g, fraction)
-
-    return np.array([freq_d, freq, freq_u]).T
+    b = _validated_fraction(fraction)
+    freq = np.asarray(freq, dtype=float)
+    g = 10 ** (3 / 10)
+    exact = ratio(g, np.round(_band_index(freq, b)), b) * 1000
+    edge = bandedge(g, b)
+    return np.array([exact / edge, freq, exact * edge]).T
 
 
 def ratio(g, x, b):
@@ -285,17 +410,3 @@ def ratio(g, x, b):
 def bandedge(g, b):
     # Band-edge ratio (ANSI s1.11, 3.7, pg. 3)
     return g ** (1 / (2 * b))
-
-
-def initindex(f, fr, g, b):
-    if b % 2:  # ODD ('x' solve from ANSI s1.11, eq. 3)
-        return np.round(
-                (b * np.log(f / fr) + 30 * np.log(g)) / np.log(g)
-                )
-    else:  # EVEN ('x' solve from ANSI s1.11, eq. 4)
-        return np.round(
-                (2 * b * np.log(f / fr) + 59 * np.log(g)) / (2 * np.log(g))
-                )
-
-
-

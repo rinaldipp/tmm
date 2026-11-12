@@ -274,7 +274,11 @@ def _write_frame(worksheet, frame, header_format, data_format):
     for col, column_name in enumerate(frame.columns):
         worksheet.write(0, col, column_name, header_format)
         for row, value in enumerate(frame[column_name], start=1):
-            worksheet.write(row, col, value, data_format)
+            if isinstance(value, (float, np.floating)) and not np.isfinite(value):
+                # Excel has no number for inf or nan (an infinite impedance, or f = 0), so write them as text.
+                worksheet.write_string(row, col, str(float(value)), data_format)
+            else:
+                worksheet.write(row, col, value, data_format)
 
 
 def _write_setup_sheet(worksheet, rows, formats):
@@ -454,6 +458,8 @@ def _insert_rotated_log_x_textboxes(data_sheet, treatment, chart_row, chart_col)
     fmin = float(np.min(treatment.freq))
     fmax = float(np.max(treatment.freq))
     log_span = np.log10(fmax) - np.log10(fmin)
+    if log_span <= 0:
+        return None  # A single frequency has no axis span to place ticks along.
     y_offset = int(plot_y + plot_height + 2)
     for tick in ticks:
         position = (np.log10(tick) - np.log10(fmin)) / log_span
@@ -512,7 +518,7 @@ def _export_all_frame(treatment):
 
     for angle_idx, angle in enumerate(angles):
         label = _angle_label(angle)
-        z_norm = z_angle[:, angle_idx] / treatment.z0
+        z_norm = treatment._normalized_impedance(z_angle[:, angle_idx], treatment.z0)
         _, alpha = treatment.reflection_and_absorption_coefficient(z_angle[:, angle_idx], angle=angle)
         data[f"Real Z_norm {label}"] = np.real(z_norm)
         data[f"Imag Z_norm {label}"] = np.imag(z_norm)
@@ -522,8 +528,9 @@ def _export_all_frame(treatment):
     _, alpha_field = treatment.reflection_and_absorption_coefficient(z_field)
     alpha_paris = treatment.diffuse_absorption_coefficient(z_angle, angles=angles)
 
-    data["Real Z_norm diffuse field impedance"] = np.real(z_field / treatment.z0)
-    data["Imag Z_norm diffuse field impedance"] = np.imag(z_field / treatment.z0)
+    z_field_norm = treatment._normalized_impedance(z_field, treatment.z0)
+    data["Real Z_norm diffuse field impedance"] = np.real(z_field_norm)
+    data["Imag Z_norm diffuse field impedance"] = np.imag(z_field_norm)
     data["Absorption diffuse field impedance"] = alpha_field
     data["Absorption diffuse Paris"] = alpha_paris
     return pd.DataFrame(data)

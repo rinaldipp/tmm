@@ -21,7 +21,7 @@ import warnings
 import numpy as np
 import pandas
 from matplotlib import pyplot as plt
-from scipy import integrate, special
+from scipy import special
 from scipy.interpolate import CubicHermiteSpline, CubicSpline, PchipInterpolator
 from scipy.signal import butter, freqz, savgol_filter
 from scipy.special import jv
@@ -46,6 +46,19 @@ MAX_GRID_DECIMALS = 12
 # (the width index is summed in closed form), and the Ingard end-correction sum over indices 0 to this value.
 RECT_SLOT_DENSITY_TERMS = 1000
 RECT_SLOT_END_CORRECTION_TERMS = 180
+
+# Largest amount by which, at any frequency, the absorption from the field-incidence impedance may exceed the
+# statistical (Paris) absorption over the same angles before compute() warns for diffuse_method="field". Both lie
+# between 0 and 1, and the suggested value is 0.2 in absorption coefficient. A field result below the statistical one
+# never warns. That level separates two kinds of stack. Cavities filled with porous material stay below it, while
+# strongly resonant empty air cavities, whose admittance average is dominated by oblique-angle poles, exceed it. A
+# lower value makes the check stricter, and a higher one makes it more lenient.
+FIELD_EXCESS_LIMIT = 0.2
+
+# Angle step [deg] above which the field-excess warning also names the step as a possible cause. Between two angles
+# that far apart even a damped stack's impedance changes by more than a tenth, so the comparison can differ without
+# an oblique-angle resonance.
+COARSE_ANGLE_STEP = 5.0
 
 # Equivalent-fluid models built from the Johnson et al. dynamic tortuosity, and the frame options of porous_layer.
 JCA_MODELS = ("jca", "jcal", "jcapl")
@@ -84,9 +97,11 @@ class TMM:
         Parameters
         ----------
         fmin : float, optional
-            Minimum frequency of interest.
+            Minimum frequency of interest [Hz]. Must be positive and finite, since the models are not defined at 0 Hz
+            or below.
         fmax : float, optional
-            Maximum frequency of interest.
+            Maximum frequency of interest [Hz]. Must be positive, finite and not below ``fmin``. An explicit ``freq``
+            takes precedence, and the order is checked again when ``freq = None`` returns to the derived grid.
         df : float, optional
             Sets how many points the grid has, as ``int((fmax - fmin) / df) + 1``. On a linear ``x_scale`` that is the
             frequency resolution in Hz. On a logarithmic one it only sets the point count: the spacing is geometric,
@@ -111,8 +126,9 @@ class TMM:
             set.
         diffuse_method : string, optional
             Method used when ``incidence='diffuse'``. ``'field'`` averages admittance over the configured angles into a
-            field-incidence impedance, see ``field_impedance()``. ``'paris'`` averages angle-wise absorption into a
-            statistical diffuse absorption coefficient, see ``diffuse_absorption_coefficient()``.
+            field-incidence impedance and takes ``alpha`` from it at normal incidence, see ``field_impedance()``.
+            ``'paris'`` averages angle-wise absorption into a statistical diffuse absorption coefficient, see
+            ``diffuse_absorption_coefficient()``.
         s0 : float, optional
             Front/reference area in square meters used by the volume-velocity transfer matrices. The default value of
             1.0 keeps impedances in specific-acoustic-impedance form.
@@ -120,11 +136,11 @@ class TMM:
             Rear termination area in square meters. For ``backing='radiation'`` this is interpreted as the area of the
             circular radiating aperture. If omitted, ``srad`` defaults to ``s0``.
         freq : array_like, optional
-            Explicit frequency vector in Hz. When provided it owns the grid: ``fmin``/``fmax`` report its endpoints
-            while ``df`` and ``x_scale`` report ``None``. The spacing may be non-uniform because the TMM evaluates every
-            frequency independently. When omitted, the grid built from ``fmin``/``fmax``/``df`` is used. The four
-            derived-grid parameters are retained either way, so assigning ``freq = None`` later restores the grid this
-            constructor described.
+            Explicit frequency vector [Hz], positive, finite and strictly ascending. When provided it owns the grid:
+            ``fmin``/``fmax`` report its endpoints while ``df`` and ``x_scale`` report ``None``. The spacing may be
+            non-uniform because the TMM evaluates every frequency independently. When omitted, the grid built from
+            ``fmin``/``fmax``/``df`` is used. The four derived-grid parameters are retained either way, so assigning
+            ``freq = None`` later restores the grid this constructor described.
         """
         if diffuse_method not in {"paris", "field"}:
             raise ValueError("diffuse_method must be 'paris' or 'field'.")
@@ -136,8 +152,10 @@ class TMM:
             srad = s0
 
         self._df = df
-        self._fmin = fmin
-        self._fmax = fmax
+        self._fmin = self._validate_frequency_limit(fmin, "fmin")
+        self._fmax = self._validate_frequency_limit(fmax, "fmax")
+        if freq is None and float(fmax) < float(fmin):
+            raise ValueError(f"fmax ({fmax!r} Hz) must not be below fmin ({fmin!r} Hz).")
         self._freq = None if freq is None else self._as_frequency_vector(freq)
         self._s0 = self._validate_positive_area(s0, "s0")
         self._srad = self._validate_positive_area(srad, "srad")
@@ -286,12 +304,32 @@ class TMM:
         )
 
     @staticmethod
+    def _validate_frequency_limit(value, name):
+        """Return ``value`` unchanged if it is one positive, finite number of hertz; the models are not defined at 0 Hz
+        or below. Keeping the given type keeps ``log_rebuild()`` output as the user wrote it."""
+        if np.ndim(value) > 0:
+            raise ValueError(f"{name} must be a single number in Hz, not a sequence. Got {value!r}.")
+        number = float("nan")
+        if not isinstance(value, (bool, np.bool_, str, bytes)):
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                pass
+        if not np.isfinite(number) or number <= 0:
+            raise ValueError(f"{name} must be a positive, finite frequency in Hz: the models are not defined at 0 Hz "
+                             f"or below. Got {value!r}.")
+        return value
+
+    @staticmethod
     def _as_frequency_vector(freq):
         """Validate an explicit frequency vector (Hz): non-empty, 1-D, strictly ascending.
         Spacing may be non-uniform. TMM evaluates each frequency independently."""
         freq = np.asarray(freq, dtype=float).ravel()
         if freq.size == 0:
             raise ValueError("freq must contain at least one frequency in Hz.")
+        if not np.all(np.isfinite(freq)) or np.any(freq <= 0):
+            raise ValueError("freq must contain only positive, finite frequencies in Hz: the models are not defined at "
+                             "0 Hz or below.")
         if freq.size > 1 and np.any(np.diff(freq) <= 0):
             raise ValueError("freq must be strictly ascending.")
         return freq
@@ -415,6 +453,8 @@ class TMM:
                 raise ValueError("diffuse incidence_angle stop must be greater than start.")
             if start < 0 or stop > 90:
                 raise ValueError("diffuse incidence_angle must stay within 0 to 90 degrees.")
+            if int(np.round((stop - start) / step)) < 1:
+                raise ValueError("diffuse incidence_angle step must leave at least two angles between start and stop.")
         elif incidence == "angle":
             angle = values[0]
             if angle < 0 or angle >= 90:
@@ -448,7 +488,7 @@ class TMM:
     def fmin(self, new_fmin):
         """Set new minimum frequency value."""
         self._refuse_derived_grid_change("fmin")
-        self._fmin = new_fmin
+        self._fmin = self._validate_frequency_limit(new_fmin, "fmin")
         self._mark_layers_stale("fmin was changed after model data existed.")
 
     @property
@@ -463,7 +503,7 @@ class TMM:
     def fmax(self, new_fmax):
         """Set new maximum frequency value."""
         self._refuse_derived_grid_change("fmax")
-        self._fmax = new_fmax
+        self._fmax = self._validate_frequency_limit(new_fmax, "fmax")
         self._mark_layers_stale("fmax was changed after model data existed.")
 
     @property
@@ -493,6 +533,9 @@ class TMM:
         if self._freq is not None:
             return self._freq
 
+        if self._fmin > self._fmax:
+            raise ValueError(f"fmin ({self._fmin!r} Hz) is above fmax ({self._fmax!r} Hz). Set fmax first when moving "
+                             f"the range up, and fmin first when moving it down.")
         points = int((self._fmax - self._fmin) / self._df) + 1
         if self._x_scale == "lin":
             grid = np.linspace(self._fmin, self._fmax, points)
@@ -699,7 +742,15 @@ class TMM:
     @property
     def z_norm(self):
         """Return normalized surface impedance."""
-        return self.z / self.z0
+        return self._normalized_impedance(self.z, self.z0)
+
+    @staticmethod
+    def _normalized_impedance(z, z0):
+        """Return ``z / z0``, keeping an infinite impedance as ``inf + 0j`` instead of the ``inf + nan*j`` of complex
+        division."""
+        z = np.asarray(z)
+        with np.errstate(invalid="ignore"):
+            return np.where(np.isinf(z), np.inf, z / z0)
 
     @property
     def y_norm(self):
@@ -826,7 +877,8 @@ class TMM:
         The normal-incidence relation is ``r = (Zs - Z0) / (Zs + Z0)``. For oblique incidence, ``Zs`` is treated as the
         surface-normal impedance at the boundary and the incident plane wave has normal characteristic impedance
         ``Z0 / cos(theta)``. The implemented reflection coefficient is therefore
-        ``r(theta) = (Zs*cos(theta) - Z0) / (Zs*cos(theta) + Z0)`` and ``alpha(theta) = 1 - abs(r(theta))**2``.
+        ``r(theta) = (Zs*cos(theta) - Z0) / (Zs*cos(theta) + Z0)`` and ``alpha(theta) = 1 - abs(r(theta))**2``. An
+        infinite ``Zs`` gives ``r = 1`` and ``alpha = 0``.
 
         Parameters
         ----------
@@ -844,7 +896,10 @@ class TMM:
         else:
             cos_theta = np.cos(np.deg2rad(angle))
 
-        r = (zs * cos_theta - self.z0) / (zs * cos_theta + self.z0)
+        zs = np.asarray(zs)
+        with np.errstate(invalid="ignore"):
+            r = (zs * cos_theta - self.z0) / (zs * cos_theta + self.z0)
+        r = np.where(np.isinf(zs), 1, r)
         alpha = 1 - np.abs(r) ** 2
 
         return r, alpha
@@ -1177,13 +1232,14 @@ class TMM:
         phi_weights = weights / 2  # Mean over [0, pi/2].
         z_f = self._field_impedance_on_frequency_grid(float(a), float(b), tuple(float(k) for k in self.w0 / self.c0),
                                                       tuple(float(t) for t in theta), tuple(float(p) for p in phi))
-        zeta = (z_angle / self.z0)[:, :, None]
+        zeta = self._normalized_impedance(z_angle, self.z0)[:, :, None]
         weighted_sin = self._angle_weights(angle_weights, angles) * np.sin(theta)[None, :]
 
         def angular_integral(values):
             return self._trapezoidal_integral((values @ phi_weights) * weighted_sin, theta, axis=1)
 
-        absorbed = angular_integral(4 * zeta.real / np.abs(zeta + z_f) ** 2)
+        with np.errstate(invalid="ignore"):
+            absorbed = angular_integral(np.where(np.isinf(zeta), 0, 4 * zeta.real / np.abs(zeta + z_f) ** 2))
         if normalization == "incident":
             return 2 * absorbed  # Projected incident power over the hemisphere: integral of cos*sin = 1/2.
         if normalization == "true":
@@ -3992,11 +4048,24 @@ class TMM:
         """
         Compute the field-incidence impedance from a set of angle-dependent impedances.
 
-        This method averages surface admittance rather than absorption. Given angle-dependent impedance ``Zs(theta)``,
-        it evaluates ``Y_f = integral((1 / Zs(theta)) sin(theta) dtheta) / integral(sin(theta) dtheta)`` over
-        ``self.incidence_angle`` and returns ``Z_f = 1 / Y_f``. This produces a scalar field-incidence impedance that
-        can be passed through the usual reflection relation. It is mathematically distinct from statistical diffuse
-        absorption, which averages ``alpha(theta)`` with ``sin(theta)*cos(theta)`` weighting. See Aretz [1], p. 86.
+        This method averages surface admittance rather than absorption, after Aretz [1], eq. 7.16. It evaluates
+        ``Y_f = integral(sin(theta) / Zs(theta) dtheta) / integral(sin(theta) dtheta)`` over the angles in
+        ``self.incidence_angle``, with ``Zs`` the angle-dependent surface impedance, and returns ``Z_f = 1 / Y_f``. For
+        ``diffuse_method='field'``, ``compute()`` passes ``Z_f`` through the normal-incidence reflection relation to
+        give ``alpha``, the absorption at field incidence taken from the averaged impedance as in Takahashi et al. [2],
+        who weight the admittance with ``sin(theta)*cos(theta)``. Averaging the admittance and then applying the
+        normal-incidence relation is not the same as averaging the absorption at each angle. ``diffuse_method='paris'``
+        does the latter, weighting ``alpha(theta)`` with ``sin(theta)*cos(theta)``. That is the Paris form, Aretz [1],
+        eq. 3.11, which Aretz evaluates up to 78 degrees for field incidence.
+
+        The integral is a package extension of the source. Between neighbouring angles the method interpolates ``Zs``
+        and ``sin(theta)`` linearly and integrates their ratio exactly. On an interval of width ``h`` from impedance
+        ``Za`` to ``Zb``, with sines ``sa`` and ``sb``, that is ``h*(sa*L/q + (sb - sa)*(q - L)/q**2) / Za``, with
+        ``q = (Zb - Za) / Za`` and ``L = log(Zb / Za)``. The admittance has near-poles where the reactance of a lightly
+        damped stack crosses zero at an oblique angle, and point sampling misses them, while ``Zs`` itself stays smooth.
+        Where ``Zs`` changes by less than a tenth of itself across an interval, the trapezoid of ``sin(theta) / Zs`` is
+        used instead, which differs from the exact form by about ``abs(q)**2/6`` relative. An angle-independent ``Zs``
+        is returned unchanged.
 
         Because this is a complex admittance average, the result depends on the impedance reference plane: a lossless
         top air layer changes it even though the angle-wise absorption is unchanged. See ``compute()``.
@@ -4004,16 +4073,29 @@ class TMM:
         Parameters
         ----------
         z : array
-            Multidimensional array with angle dependent set of impedances.
+            Angle-dependent surface impedances, one row per frequency and one column per angle in
+            ``self.incidence_angle`` [Pa*s/m].
 
         Returns
         -------
-        Field impedance array.
+        array
+            Field-incidence impedance for each frequency [Pa*s/m].
+
+        Notes
+        -----
+        A segment from ``Za`` to ``Zb`` that misses the origin turns through less than ``pi`` as seen from it, so the
+        principal logarithm is the change of ``log(Zs)`` along it. A lossless crossing through the origin takes the
+        limit of a vanishing positive resistance, a turn of ``+pi`` when the reactance rises and ``-pi`` when it falls.
+        A node with ``Zs = 0`` makes ``Y_f`` infinite and returns ``Z_f = 0``, while a zero between two nodes gives the
+        finite limit above.
 
         References
         ----------
         [1] M. Aretz, "Combined Wave and Ray Based Room Acoustic Simulations of Small Rooms", Ph.D. thesis, RWTH
             Aachen University, Logos Verlag, 2012.
+        [2] Y. Takahashi, T. Otsuru and R. Tomiku, "In situ measurements of surface impedance and absorption
+            coefficients of porous materials using two microphones and ambient noise", Applied Acoustics, vol. 66,
+            pp. 845-865, 2005.
         """
         z = np.asarray(z)
         if z.ndim != 2 or z.shape[1] != len(self.incidence_angle):
@@ -4022,14 +4104,98 @@ class TMM:
                 f"z must have one column per angle in incidence_angle: got shape {z.shape} for "
                 f"{len(self.incidence_angle)} angles."
             )
-        A = 1 / z
-        Af1 = A * np.sin(np.deg2rad(self.incidence_angle))
-        Af2 = np.sin(np.deg2rad(self.incidence_angle))
-        Af1 = integrate.simpson(Af1, x=np.deg2rad(self.incidence_angle))
-        Af2 = integrate.simpson(Af2, x=np.deg2rad(self.incidence_angle))
-        Af = Af1 / Af2
-        z_field = 1 / Af
-        return z_field
+        return self._field_impedance_and_near_poles(z, self.incidence_angle)[0]
+
+    @classmethod
+    def _field_impedance_and_near_poles(cls, z, angles_deg):
+        """
+        Return the field-incidence impedance and the number of near-pole intervals. Rows whose impedance is the same at
+        every angle are returned as that impedance, without the round trip through the admittance.
+        """
+        z = np.asarray(z)
+        admittance, near_poles = cls._field_admittance(z, angles_deg)
+        impedance = cls._admittance_to_impedance(admittance)
+        constant = np.all(z == z[:, :1], axis=1)
+        impedance[constant] = z[constant, 0]
+        return impedance, near_poles
+
+    @staticmethod
+    def _admittance_to_impedance(admittance):
+        """Invert an admittance, mapping an infinite admittance to ``Z = 0`` and a zero admittance to ``Z = inf``."""
+        with np.errstate(divide="ignore", invalid="ignore"):
+            impedance = 1 / admittance
+        impedance = np.where(np.isinf(admittance), 0, impedance)
+        return np.where(admittance == 0, np.inf, impedance).astype(complex)
+
+    @staticmethod
+    def _field_admittance(z, angles_deg, q_cut=0.1):
+        """
+        Return the field-incidence admittance of ``field_impedance()`` and the number of intervals where ``Zs`` changes
+        by more than ``q_cut`` of itself, which used the exact form. On a fine angle grid that count is zero unless the
+        admittance has a near-pole; a coarse grid can give a nonzero count without one.
+        """
+        z = np.asarray(z, dtype=complex)
+        theta = np.deg2rad(np.asarray(angles_deg, dtype=float))
+        sin = np.sin(theta)
+        step = np.diff(theta)
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            if theta.size < 2:
+                return 1 / z[:, 0], 0
+            ratio_sin = sin[None, :] / z
+            terms = step * (ratio_sin[:, :-1] + ratio_sin[:, 1:]) / 2
+            q = z[:, 1:] / z[:, :-1] - 1
+            rows, cols = np.nonzero(np.abs(q) > q_cut)
+            if rows.size:
+                z0 = z[rows, cols]
+                z1 = z[rows, cols + 1]
+                q = q[rows, cols]
+                ratio = q + 1
+                log_ratio = np.log(ratio)
+                # A segment through the origin (Z1/Z0 negative real, to rounding) is a lossless crossing.
+                crossing = (ratio.real < 0) & (np.abs(ratio.imag) <= 1e-9 * np.abs(ratio))
+                log_ratio[crossing] = (np.log(-ratio.real[crossing])
+                                       + 1j * np.pi * np.sign(z1.imag[crossing] - z0.imag[crossing]))
+                exact = step[cols] * (sin[cols] * log_ratio / q
+                                      + (sin[cols + 1] - sin[cols]) * (q - log_ratio) / q ** 2) / z0
+                finite = np.isfinite(exact)
+                terms[rows[finite], cols[finite]] = exact[finite]
+            admittance = terms.sum(axis=1) / np.sum(step * (sin[:-1] + sin[1:]) / 2)
+        admittance[(z == 0).any(axis=1)] = np.inf
+        return admittance, int(rows.size)
+
+    def _warn_if_field_overstates(self, z_field):
+        """
+        Warn when the absorption from the field-incidence impedance exceeds the statistical absorption over the same
+        angles by more than the module constant ``FIELD_EXCESS_LIMIT``. ``compute()`` calls it only when some interval
+        used the exact form of ``field_impedance()``. With an angle step coarser than ``COARSE_ANGLE_STEP`` the message
+        names the step as a possible cause.
+        """
+        _, alpha_field = self.reflection_and_absorption_coefficient(z_field)
+        excess = np.asarray(alpha_field - self.diffuse_absorption_coefficient(self._z_angle)).reshape(-1)
+        over = excess > FIELD_EXCESS_LIMIT
+        if not np.any(over):
+            return
+        worst = int(np.nanargmax(excess))
+        freq = np.asarray(self.freq, dtype=float)
+        angles = np.asarray(self.incidence_angle, dtype=float)
+        low, high = freq[over].min(), freq[over].max()
+        step = float(np.max(np.diff(angles))) if angles.size > 1 else 0.0
+        band = f"between {low:g} and {high:g} Hz" if high > low else f"only at {low:g} Hz"
+        if step > COARSE_ANGLE_STEP:
+            cause = (f"The angle step of {step:g} deg is coarse enough to cause this difference by itself. Repeat "
+                     f"with a finer incidence_angle step; if the warning remains, the admittance average is dominated "
+                     f"by resonances at oblique angles. Compare with diffuse_method='paris'.")
+        else:
+            cause = ("The admittance average is dominated by resonances at oblique angles, typical of an air cavity "
+                     "with little damping, so the field-incidence impedance and the absorption taken from it overstate "
+                     "the absorption of this stack. Compare with diffuse_method='paris'.")
+        warnings.warn(
+            f"The absorption from the field-incidence impedance exceeds the statistical (Paris) absorption over the "
+            f"same angles ({angles.min():g} to {angles.max():g} deg) by up to {excess[worst]:.2f} at "
+            f"{freq[worst]:g} Hz (above {FIELD_EXCESS_LIMIT:g} {band}). " + cause,
+            RuntimeWarning,
+            stacklevel=4,
+        )
 
     def _unflanged_pipe_radiation_load(self):
         """
@@ -4083,6 +4249,14 @@ class TMM:
         If ``incidence='diffuse'`` and ``diffuse_method='field'`` are used with a top air layer, this method emits a
         ``RuntimeWarning`` because field-incidence impedance averaging is reference-plane sensitive. This warning does
         not apply to ``diffuse_method='paris'``, which averages angle-wise absorption coefficients.
+
+        With ``diffuse_method='field'``, when some interval needs the exact form of ``field_impedance()``, as at a
+        near-pole of the admittance, this method also evaluates the statistical absorption over the same angles and
+        compares it with ``alpha``. If ``alpha`` exceeds it at any frequency by more than the module constant
+        ``FIELD_EXCESS_LIMIT``, a difference between two absorption coefficients, it emits a ``RuntimeWarning``. The
+        admittance average is then dominated by resonances at oblique angles, as in an air cavity with little damping,
+        and both the field-incidence impedance and its absorption overstate the absorption of the stack. This is a
+        package check that no source prescribes.
         """
         if getattr(self, "_layers_stale", False):
             reasons = "; ".join(getattr(self, "_stale_reasons", []))
@@ -4187,8 +4361,21 @@ class TMM:
         Dg = Tg[1, 1]
 
         if backing == "rigid":
-            # Rigid termination: rear particle velocity is zero, so Zs = S0*A/C.
-            self.z_angle = self.s0 * Ag / Cg
+            # Rigid termination: rear particle velocity is zero, so Zs = S0*A/C. C = 0 means nothing in the stack can
+            # move against the wall (only sheet layers without a volume of their own, no cavity), so Zs is infinite.
+            blocked = Cg == 0
+            with np.errstate(divide="ignore", invalid="ignore"):
+                self.z_angle = np.where(blocked, np.inf, self.s0 * Ag / Cg)
+            if np.all(blocked):
+                warnings.warn(
+                    "The surface impedance is infinite at every frequency because nothing in the stack can move "
+                    "against the rigid backing. Membranes, plates, perforated, slotted and rectangular-slot panels and "
+                    "fabric facings are modelled without a volume of their own, so a stack made only of them, in any "
+                    "combination, has no air to compress. Nothing absorbs, so alpha is 0. Add an air or porous layer "
+                    "behind them, for example with air_layer().",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
         elif backing == "radiation":
             # Low-ka unflanged circular-pipe radiation load.
             zload = self._unflanged_pipe_radiation_load()
@@ -4201,8 +4388,10 @@ class TMM:
             self.z_angle = self.s0 * (Ag * zload + Bg) / (Cg * zload + Dg)
 
         if self.incidence == "diffuse":
-            zc = self.field_impedance(self._z_angle)
+            zc, near_poles = self._field_impedance_and_near_poles(self._z_angle, self.incidence_angle)
             alpha = self.diffuse_absorption_coefficient(self._z_angle) if self.diffuse_method == "paris" else None
+            if self.diffuse_method == "field" and near_poles:
+                self._warn_if_field_overstates(zc)
         else:
             zc = self._z_angle[:, 0]
             if self.incidence == "angle":
@@ -5361,7 +5550,7 @@ class TMM:
             absorption = []
             absorption_percentual = []
             for i in range(len(bands)):
-                freq_bands.append(float(f"{bands[i]:0.2f}"))
+                freq_bands.append(float(bands[i]))
                 absorption.append(float(f"{result[i]:0.2f}"))
                 absorption_percentual.append(float(f"{result[i] * 100:0.0f}"))
             data = {"Bands [Hz]": freq_bands, "Absorption [-]": absorption, "Absorption [%]": absorption_percentual}
@@ -5467,6 +5656,7 @@ class TMM:
         metadata supported by the current package version.
         """
         project_folder = self._project_folder
+        previous_state = dict(self.__dict__)
         folder_check = os.path.exists(self.project_folder + os.sep + "Treatments")
         if self.project_folder:
             if folder_check is False:
@@ -5477,8 +5667,47 @@ class TMM:
         else:
             h5utils.load_class_from_hdf5(self, filename)
         self._project_folder = project_folder
+        try:
+            self._drop_non_positive_frequencies(filename)
+        except ValueError:
+            # A refused file must not leave this object half-overwritten.
+            self.__dict__.clear()
+            self.__dict__.update(previous_state)
+            raise
         self.rebuild()
         print(filename + ".h5 loaded successfully.")
+
+    def _drop_non_positive_frequencies(self, filename):
+        """
+        Remove 0 Hz and negative points from a grid restored by ``load()``. Earlier versions accepted them, and the
+        loader restores the grid without the setters' checks. The remaining points become an explicit ``freq`` vector.
+        A grid with values that are not finite, as a logarithmic grid from 0 Hz gives, is refused. A derived ``fmin`` at
+        or below 0 Hz moves to the first remaining point, so clearing ``freq`` later cannot bring 0 Hz back.
+        """
+        with np.errstate(divide="ignore", invalid="ignore"):
+            grid = np.asarray(self.freq, dtype=float)
+        if not np.all(np.isfinite(grid)):
+            raise ValueError(
+                f"{filename}.h5 stores a frequency grid with values that are not finite numbers, as a logarithmic grid "
+                f"from fmin = 0 Hz gives. Create the treatment again with a positive fmin."
+            )
+        keep = grid > 0
+        if keep.all():
+            return
+        if not keep.any():
+            raise ValueError(f"{filename}.h5 has no positive frequency to compute at.")
+        self._freq = grid[keep]
+        if self._fmin <= 0:
+            self._fmin = float(self._freq[0])
+        dropped = int((~keep).sum())
+        warnings.warn(
+            f"{filename}.h5 has {dropped} {'frequency' if dropped == 1 else 'frequencies'} at or below 0 Hz, where the "
+            f"models are not defined. "
+            f"They were removed, and the remaining points now form an explicit freq vector from "
+            f"{self._freq[0]:g} to {self._freq[-1]:g} Hz.",
+            UserWarning,
+            stacklevel=3,
+        )
 
     def plot(self, show_fig=True, **kwargs):
         """
