@@ -17,7 +17,6 @@ dependencies = [
     "scipy",
     "matplotlib",
     "pandas",
-    "mpmath",
     "xlsxwriter",
     "h5py",
 ]
@@ -45,4 +44,5 @@ namespaces = true
     "*.pdf",
     "_csv/*.csv",
     "_descr/*.txt",
+    "_literature/*.csv",
 ]

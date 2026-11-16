@@ -70,7 +70,7 @@ def save2sheet(
     elif ext == ".csv":
         paths = _write_selected_csv(treatment, output_dir, stem, n_oct=n_oct, metadata=metadata, conversion=conversion)
     else:
-        raise NameError("Unidentified extension. Available extensions: ['.xlsx', '.csv']")
+        raise ValueError(f"Unidentified extension {ext!r}. Available extensions: ['.xlsx', '.csv']")
 
     print("Sheet saved to ", paths.get(ext.lstrip("."), next(iter(paths.values()))))
     return paths
@@ -89,6 +89,17 @@ def _backing_data(treatment):
 
 
 def _selected_export_labels_and_note(treatment):
+    if treatment._has_paris_termination_alpha():
+        note = ("impedance_from_absorption() or material_from_table() termination: absorption is the Paris absorption "
+                "over 0 to 90 degrees of the locally reacting retrieved impedance, whatever diffuse_method and "
+                "incidence_angle say.")
+        if treatment.diffuse_method == "paris":
+            return None, None, note + " Impedance columns are omitted, as in every diffuse_method='paris' export."
+        return (
+            "Real Z_norm retrieved",
+            "Imag Z_norm retrieved",
+            note + " The impedance columns hold the retrieved impedance, not a field average.",
+        )
     if treatment.incidence == "diffuse" and treatment.diffuse_method == "paris":
         return (
             None,
@@ -188,6 +199,16 @@ def _setup_rows(treatment, conversion):
     return rows
 
 
+SCATTERING_COLUMN = "Scattering [-]"
+
+
+def _add_scattering(data, treatment):
+    """Append the scattering coefficient as the last column when the treatment has one; other exports are unchanged."""
+    if treatment.scat is not None:
+        data[SCATTERING_COLUMN] = np.broadcast_to(np.asarray(treatment.scat, dtype=float), np.shape(treatment.freq))
+    return data
+
+
 def _selected_data_frame(treatment):
     z_real, z_imag, _ = _selected_export_labels_and_note(treatment)
     data = {"Frequency [Hz]": treatment.freq}
@@ -195,7 +216,7 @@ def _selected_data_frame(treatment):
         data[z_real] = np.real(treatment.z_norm)
         data[z_imag] = np.imag(treatment.z_norm)
     data["Absorption [-]"] = treatment.alpha
-    return pd.DataFrame(data)
+    return pd.DataFrame(_add_scattering(data, treatment))
 
 
 def _bands_frame(treatment, n_oct):
@@ -212,6 +233,9 @@ def _write_selected_csv(treatment, output_dir, stem, n_oct, metadata, conversion
     csv_path = output_dir / f"{stem}.csv"
     metadata_csv_path = output_dir / f"{stem}_metadata.csv"
     data = pd.concat([_selected_data_frame(treatment), _bands_frame(treatment, n_oct)], axis=1)
+    # The scattering column goes after the band columns, so the columns of the other exports keep their positions.
+    data = data[[column for column in data.columns if column != SCATTERING_COLUMN]
+                + [column for column in data.columns if column == SCATTERING_COLUMN]]
     data.to_csv(csv_path, index=False, float_format="%.6g", sep=";", encoding="utf-8-sig")
     paths = {"csv": csv_path}
     if metadata:
@@ -246,7 +270,7 @@ def _write_xlsx(treatment, output_dir, stem, chart_styles, n_oct, metadata, conv
     _write_setup_sheet(setup_sheet, setup_rows, formats)
     _insert_charts(workbook, data_sheet, treatment, df_data, chart_styles)
 
-    data_sheet.set_column("A:D", 28)
+    data_sheet.set_column(0, max(3, len(df_data.columns) - 1), 28)
     bands_sheet.set_column("A:B", 30)
     setup_sheet.set_column("A:A", 38)
     setup_sheet.set_column("B:C", 72)
@@ -496,10 +520,9 @@ def _has_angular_data(treatment):
 def _export_all_frame(treatment):
     """Return a diagnostic table with all angle-wise and diffuse quantities.
 
-    Treatments that never computed angle-dependent impedance, such as ``material_model()`` results and objects reduced
-    by ``reduce_size()``, fall back to the selected-method table. Building the angle-wise and field-impedance columns
-    for them would read the zero-filled ``z_angle`` fallback and write whole columns of zeros and NaNs that look like
-    computed values.
+    Treatments that store no angle-dependent impedance, such as objects reduced by ``reduce_size()``, fall back to the
+    selected-method table. Building the angle-wise and field-impedance columns for them would read the zero-filled
+    ``z_angle`` fallback and write whole columns of zeros and NaNs that look like computed values.
     """
     treatment._raise_if_partial_z_angle("save2sheet(export_all=True)")
     if not _has_angular_data(treatment):
@@ -533,7 +556,7 @@ def _export_all_frame(treatment):
     data["Imag Z_norm diffuse field impedance"] = np.imag(z_field_norm)
     data["Absorption diffuse field impedance"] = alpha_field
     data["Absorption diffuse Paris"] = alpha_paris
-    return pd.DataFrame(data)
+    return pd.DataFrame(_add_scattering(data, treatment))
 
 
 def _write_export_all_csv(treatment, output_dir, stem, metadata, conversion):
@@ -547,6 +570,10 @@ def _write_export_all_csv(treatment, output_dir, stem, metadata, conversion):
         if _has_angular_data(treatment):
             note = ("CSV-only diagnostic export. Includes angle-wise impedance/absorption, field diffuse "
                     "impedance/absorption, and Paris diffuse absorption.")
+            if treatment._has_paris_termination_alpha():
+                note += (" The absorption of the impedance_from_absorption() or material_from_table() termination is "
+                         "the Paris absorption over 0 to 90 degrees, which neither diffuse column gives, since both "
+                         "average over incidence_angle.")
         else:
             note = ("CSV-only diagnostic export. This treatment stores no angle-dependent impedance, so the "
                     "angle-wise and field diffuse columns were omitted and the selected-method data was "

@@ -13,6 +13,8 @@ from matplotlib import gridspec
 from matplotlib import pyplot as plt
 from matplotlib import style, ticker
 
+from tmm import _utils as utils
+
 
 def set_style():
     """Set the Matplotlib style used by the package plots."""
@@ -59,6 +61,9 @@ def _secondary_plot_color(single_treatment):
 
 def _absorption_curve_label(tmm, compact=False):
     """Return an absorption legend label that describes the plotted curve."""
+    if tmm._has_paris_termination_alpha():
+        # The absorption of an impedance_from_absorption() termination is the Paris value over 0 to 90 degrees.
+        return "Paris Alpha" if compact else "Diffuse Paris Alpha (0 - 90 deg)"
     if tmm.incidence == "diffuse":
         if compact:
             return "Paris Alpha" if tmm.diffuse_method == "paris" else "Field Alpha"
@@ -291,7 +296,7 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                     ax[i] = plt.subplot(gs[0, i])
             ax[i].set_title(_title_with_display_name(r"Normalized Surface Impedance ($Z$)", tmms),
                             fontsize=base_fontsize)
-            ax[i].set_ylabel(r"$Z$ [Pa.s/m3]", fontsize=base_fontsize - 2)
+            ax[i].set_ylabel(r"$Z/(\rho_0 c_0)$ [-]", fontsize=base_fontsize - 2)
             if _uses_paris_absorption_only(tmm):
                 _add_paris_impedance_note(ax[i], base_fontsize)
             else:
@@ -309,7 +314,7 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                     ax[i] = plt.subplot(gs[0, i])
             ax[i].set_title(_title_with_display_name(r"Normalized Surface Admittance ($Y$)", tmms),
                             fontsize=base_fontsize)
-            ax[i].set_ylabel(r"$Y$ [m3/Pa.s]", fontsize=base_fontsize - 1)
+            ax[i].set_ylabel(r"$Y \rho_0 c_0$ [-]", fontsize=base_fontsize - 1)
             if _uses_paris_absorption_only(tmm):
                 _add_paris_impedance_note(ax[i], base_fontsize)
             else:
@@ -329,8 +334,7 @@ def acoustic_data(tmms, fig=None, ax=None, gs=None, figsize=(16, 9), plots=None,
                             fontsize=base_fontsize,
                             loc="left" if single_treatment else "center")
             ax[i].set_ylabel(r"$\alpha$ [-]", fontsize=base_fontsize - 1)
-            if (show_incidence and tmm.incidence == "diffuse" and "material_model" not in (tmm.filename or "")
-                    and _has_reference_angle_curve(tmm)):
+            if show_incidence and tmm.incidence == "diffuse" and _has_reference_angle_curve(tmm):
                 ax[i].plot(tmm.freq, tmm.alpha, linewidth=2, c=primary_color,
                            label=label_name + _absorption_curve_label(tmm, compact=not single_treatment))
                 ax[i].plot(tmm.freq, tmm.alpha_angle(), linewidth=2,
@@ -638,7 +642,7 @@ def _finite_sample_variant_specs(variants):
         variants = ("paris", "thomasson")
     elif isinstance(variants, str) and variants == "all":
         variants = tuple(FINITE_SAMPLE_VARIANTS)
-    elif isinstance(variants, (str, dict)):
+    elif isinstance(variants, (str, dict)) or not np.iterable(variants):
         variants = (variants,)
     specs = []
     for variant in variants:
@@ -662,7 +666,8 @@ def _finite_sample_variant_specs(variants):
                 label = "Finite sample, " + (", ".join(parts) if parts else "custom")
             specs.append((label, options))
         else:
-            raise TypeError("Each variant must be a string shortcut or a dict of finite_sample_absorption options.")
+            raise ValueError(f"Each variant must be a string shortcut or a dict of finite_sample_absorption options, "
+                             f"not {utils.describe_value(variant)}.")
     return specs
 
 
@@ -688,7 +693,9 @@ def finite_sample_data(tmm, sample_size=3.162, variants=None, n_oct=None, fig=No
 
     The top panel shows the narrowband absorption coefficient of each variant, with a reference line at 1 because the
     edge effect can raise finite-sample values above it. With ``n_oct``, a second panel shows the same curves averaged
-    into fractional-octave bands.
+    into fractional-octave bands. The curves integrate over ``incidence_angle``, or for the termination of
+    ``TMM.impedance_from_absorption`` or ``TMM.material_from_table`` over the angles ``TMM.finite_sample_absorption``
+    takes for it. The title shows that range.
 
     Parameters
     ----------
@@ -746,11 +753,18 @@ def finite_sample_data(tmm, sample_size=3.162, variants=None, n_oct=None, fig=No
 
     set_style()
     freq = np.asarray(tmm.freq, dtype=float)
-    angles = np.asarray(tmm.incidence_angle, dtype=float)
+    # A retrieved termination integrates over the angles of its own forward model, and the Paris curve follows them.
+    termination_angles = tmm._termination_angles()
+    angles = np.asarray(tmm.incidence_angle if termination_angles is None else termination_angles, dtype=float)
     curves = []
     for label, options in specs:
         if options is None:
-            curves.append((label, tmm.diffuse_absorption_coefficient(), "--"))
+            if termination_angles is None:
+                paris = tmm.diffuse_absorption_coefficient()
+            else:
+                paris = tmm.diffuse_absorption_coefficient(np.repeat(np.asarray(tmm.z)[:, None], angles.size, axis=1),
+                                                           angles=angles)
+            curves.append((label, paris, "--"))
             continue
         if options == "normal":
             try:

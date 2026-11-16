@@ -22,6 +22,8 @@ For further information check the function specific documentation.
 """
 import numpy as np
 
+from tmm import _utils as utils
+
 # The 4*pi**2 factor of equation (S10). Kept as a module constant because it appears in every branch below.
 FOUR_PI_SQUARED = 4 * np.pi ** 2
 
@@ -31,6 +33,8 @@ UNSUPPORTED_POROSITY_TYPES = {
                       "discards by assuming a rigid solid phase",
     "thin_plate_layer": "a plate is an impervious solid layer with no air volume fraction for Wood's law",
     "constant_z": "a constant-impedance termination carries no thickness or porosity metadata",
+    "impedance_from_absorption": "an impedance retrieved from absorption data carries no thickness or porosity "
+                                 "metadata",
 }
 
 # Appended to every porosity error, since an override is the way past each of them.
@@ -97,8 +101,11 @@ def effective_porosity(matrix):
                 layer_type,
                 "a spline-fitted material model exposes no layer geometry",
             )
+            # A material_model() entry is a termination, not a numbered layer.
+            label = ("The material_model() termination" if key == "material_model"
+                     else utils.layer_label(matrix, key))
             raise ValueError(
-                f"Layer {key!r} of type {layer_type!r} has no Wood's-law porosity: {reason}. "
+                f"{label} of type {layer_type!r} has no Wood's-law porosity: {reason}. "
                 f"{BULK_MODULUS_OVERRIDE_HINT}"
             )
 
@@ -106,7 +113,7 @@ def effective_porosity(matrix):
             continue
 
         thickness = float(value["thickness [mm]"])
-        porosity = _layer_porosity(key, value)
+        porosity = _layer_porosity(utils.layer_label(matrix, key), value)
         layers.append({"layer": key, "type": layer_type, "thickness [mm]": thickness, "porosity": porosity})
 
     if not layers:
@@ -149,8 +156,8 @@ def effective_bulk_modulus_ratio(matrix, thermal="isothermal", gamma=1.4):
     -------
     Effective ``Beff / B0`` and a list of per-layer dictionaries including the ratio each layer contributed.
     """
-    if thermal not in VALID_THERMAL:
-        raise ValueError(f"thermal must be one of {VALID_THERMAL}.")
+    if not isinstance(thermal, str) or thermal not in VALID_THERMAL:
+        raise ValueError(f"thermal must be one of {VALID_THERMAL}, not {utils.describe_value(thermal)}.")
     if gamma <= 0:
         raise ValueError("gamma must be greater than zero.")
 
@@ -169,13 +176,13 @@ def effective_bulk_modulus_ratio(matrix, thermal="isothermal", gamma=1.4):
     return total_thickness / total_compliance, layers
 
 
-def _layer_porosity(key, value):
-    """Return the air volume fraction of a single layer entry."""
+def _layer_porosity(label, value):
+    """Return the air volume fraction of a single layer entry; ``label`` names the layer in error messages."""
     layer_type = value.get("type")
 
     if layer_type in UNSUPPORTED_POROSITY_TYPES:
         raise ValueError(
-            f"Layer {key!r} of type {layer_type!r} has no Wood's-law porosity: "
+            f"{label} of type {layer_type!r} has no Wood's-law porosity: "
             f"{UNSUPPORTED_POROSITY_TYPES[layer_type]}. {BULK_MODULUS_OVERRIDE_HINT}"
         )
 
@@ -189,7 +196,7 @@ def _layer_porosity(key, value):
         return float(value["open_area [%]"]) / 100
 
     raise ValueError(
-        f"Layer {key!r} of type {layer_type!r} carries neither 'porosity' nor 'open_area [%]', so its air "
+        f"{label} of type {layer_type!r} carries neither 'porosity' nor 'open_area [%]', so its air "
         f"volume fraction is unknown. {BULK_MODULUS_OVERRIDE_HINT}"
     )
 
@@ -408,8 +415,8 @@ def causal_minimum_thickness(freq, alpha, c0, bulk_modulus_ratio, tail="model", 
     ``tail_fraction_modelled`` is the share they would carry either way, which is what says whether the band is wide
     enough.
     """
-    if tail not in VALID_TAILS:
-        raise ValueError(f"tail must be one of {VALID_TAILS}.")
+    if not isinstance(tail, str) or tail not in VALID_TAILS:
+        raise ValueError(f"tail must be one of {VALID_TAILS}, not {utils.describe_value(tail)}.")
 
     freq = np.asarray(freq, dtype=float).reshape(-1)
     alpha = np.asarray(alpha, dtype=float).reshape(-1)
@@ -508,28 +515,28 @@ def causality_limit(solve_for, c0, bulk_modulus_ratio, alpha_target=None, f_low=
     c0 : float
         Speed of sound in air [m/s].
     bulk_modulus_ratio : float
-        Static ``Beff / B0`` of the treatment.
+        Static ``Beff / B0`` of the treatment, above 0.
     alpha_target : float, optional
         Flat absorption coefficient held across the band. Required unless solving for it.
     f_low : float, optional
-        Lower band edge in Hz. Required unless solving for it.
+        Lower band edge in Hz, above 0. Required unless solving for it.
     f_high : float or None, optional
-        Upper band edge in Hz. ``None`` means the target extends to infinite frequency.
+        Upper band edge in Hz, above 0. ``None`` or positive infinity means the target extends to infinite frequency.
     depth : float, optional
-        Treatment thickness in millimetres. Required unless solving for it.
+        Treatment thickness in millimetres, above 0. Required unless solving for it. Values outside these ranges raise a
+        ``ValueError``.
 
     Returns
     -------
     Dictionary with the solved quantity and every input actually used, so a printed result states its own assumptions.
     """
-    if solve_for not in VALID_SOLVE_FOR:
-        raise ValueError(f"solve_for must be one of {VALID_SOLVE_FOR}.")
-    if bulk_modulus_ratio <= 0:
-        raise ValueError("bulk_modulus_ratio must be greater than zero.")
+    if not isinstance(solve_for, str) or solve_for not in VALID_SOLVE_FOR:
+        raise ValueError(f"solve_for must be one of {VALID_SOLVE_FOR}, not {utils.describe_value(solve_for)}.")
+    utils.check_positive("causality_limit", "bulk_modulus_ratio", "the static bulk modulus ratio Beff/B0 [-]",
+                         bulk_modulus_ratio)
+    check_limit_inputs(f_low, f_high, depth)
 
     if f_high is not None:
-        if f_high <= 0:
-            raise ValueError("f_high must be greater than zero.")
         if f_low is not None and f_high <= f_low:
             raise ValueError("f_high must be greater than f_low.")
     inverse_f_high = 0.0 if f_high is None else 1 / f_high
@@ -546,17 +553,11 @@ def causality_limit(solve_for, c0, bulk_modulus_ratio, alpha_target=None, f_low=
 
     elif solve_for == "depth":
         _require(alpha_target=alpha_target, f_low=f_low)
-        if f_low <= 0:
-            raise ValueError("f_low must be greater than zero.")
         level = _absorption_level(alpha_target)
         depth = scale * level * (1 / f_low - inverse_f_high)
 
     else:
         _require(f_low=f_low, depth=depth)
-        if f_low <= 0:
-            raise ValueError("f_low must be greater than zero.")
-        if depth <= 0:
-            raise ValueError("depth must be greater than zero.")
         level = depth / (scale * (1 / f_low - inverse_f_high))
         alpha_target = float(-np.expm1(-level))
 
@@ -571,6 +572,21 @@ def causality_limit(solve_for, c0, bulk_modulus_ratio, alpha_target=None, f_low=
     }
 
 
+def check_limit_inputs(f_low, f_high, depth):
+    """
+    Raise a ``ValueError`` for a ``causality_limit`` input that is given and not physical: ``f_low`` and ``depth`` must
+    be finite numbers above 0, and ``f_high`` a number above 0, where positive infinity, like ``None``, means no upper
+    band edge.
+    """
+    if f_low is not None:
+        utils.check_positive("causality_limit", "f_low", "the lower band edge [Hz]", f_low)
+    if f_high is not None:
+        utils.check_number("causality_limit", "f_high", "the upper band edge [Hz]", f_high,
+                           "None or a number above 0, where infinity means no upper edge", lambda x: x > 0)
+    if depth is not None:
+        utils.check_positive("causality_limit", "depth", "the treatment thickness [mm]", depth)
+
+
 def _require(**arguments):
     """Raise if any of the named arguments needed by a ``causality_limit`` branch is missing."""
     missing = sorted(name for name, value in arguments.items() if value is None)
@@ -580,9 +596,8 @@ def _require(**arguments):
 
 def _absorption_level(alpha_target):
     """Return ``L0 = abs(ln(1 - A0))`` for a flat absorption target."""
-    if not 0 < alpha_target < 1:
-        raise ValueError("alpha_target must be greater than zero and less than one.")
-
+    alpha_target = utils.check_number("causality_limit", "alpha_target", "the flat absorption target [-]", alpha_target,
+                                      "a finite number above 0 and below 1", lambda x: 0 < x < 1)
     return float(-np.log1p(-alpha_target))
 
 

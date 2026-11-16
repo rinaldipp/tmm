@@ -2,12 +2,16 @@
 
 TMM is a Python toolbox for building and evaluating multilayer acoustic
 treatments with transfer-matrix methods. It supports porous layers, air
-cavities, membranes, circular perforated panels, long-slot panels, porous
-facings, and material-model helpers based on the included database.
+cavities, membranes, thin plates, perforated panels, slotted panels,
+rectangular-slot panels, porous facings, and material-model helpers based on
+the included database.
 
 The package can compute normal, angle, and diffuse-incidence absorption and
 impedance, plot common treatment quantities, save/load HDF5 checkpoints, and
-export XLSX or CSV result files.
+export XLSX or CSV result files. It also includes presets for porous materials,
+plates, and fabrics, tables of published absorption and scattering
+coefficients, and a conversion from band absorption coefficients to a surface
+impedance.
 
 ## Installation
 
@@ -24,7 +28,7 @@ pip install -e .
 ```
 
 Runtime dependencies are declared by the package and include `numpy`, `scipy`,
-`matplotlib`, `pandas`, `mpmath`, `xlsxwriter`, and `h5py`.
+`matplotlib`, `pandas`, `xlsxwriter`, and `h5py`.
 
 ## Quick Example
 
@@ -55,6 +59,66 @@ treatment.save2sheet(n_oct=3)
 treatment.save()
 bands, filtered_alpha = treatment.filter_alpha(view=True, n_oct=3)
 ```
+
+## Presets and Literature Data
+
+Porous layers, thin plates, membranes, and porous facings accept a `preset`
+name in place of material values, and a membrane takes its density from a plate
+preset. The preset tables and the tables of published coefficients are pandas
+DataFrames, and every row names its source.
+
+```python
+from tmm.tmm import TMM
+
+# List the presets, with optional filters and row order.
+porous = TMM.porous_presets(model="jca", sort_by="porosity")
+plates = TMM.plate_presets(search="plasterboard")
+fabrics = TMM.fabric_presets(status="measured")
+
+# List the published absorption and scattering coefficients.
+absorption = TMM.absorption_table(category="carpet")
+scattering = TMM.scattering_table()
+
+# Use presets in place of material values.
+treatment = TMM(fmin=20, fmax=5000, df=1, incidence="diffuse",
+                diffuse_method="field", incidence_angle=[0, 78, 1])
+treatment.perforated_panel_layer(t=12.5, d=6, s=20)
+treatment.porous_facing_layer(preset="pet_nonwoven_70", in_contact=True)
+treatment.porous_layer(preset="glass_wool_11.9k", t=40)
+treatment.air_layer(t=60)
+treatment.compute(backing="rigid")
+
+# Define a surface from band absorption coefficients, given as values or
+# as a row of the absorption table.
+surface = TMM(fmin=50, fmax=5000, df=1, incidence="diffuse")
+bands = [125, 250, 500, 1000, 2000, 4000]
+alpha = [0.08, 0.08, 0.30, 0.60, 0.75, 0.80]
+surface.impedance_from_absorption(bands, alpha)
+surface.material_from_table("A-COX-CARPET-9-UL")
+```
+
+`impedance_from_absorption()` and `material_from_table()` define the whole
+surface, as `material_model()` does, so they need no layers and no `compute()`
+call. The surface is locally reacting, so its diffuse absorption is the Paris
+average from 0 to 90 degrees, whatever `diffuse_method` and `incidence_angle`
+say.
+
+## Other Tools
+
+- `alpha_w()` returns the weighted absorption coefficient of ISO 11654 with
+  its shape indicators and absorption class.
+- `finite_sample_absorption()` returns the diffuse-field absorption of a
+  finite rectangular sample, and `plot_finite_sample_absorption()` compares
+  its variants.
+- `TMM.flow_resistivity()` estimates the flow resistivity of a fibrous
+  material from its bulk density and fibre diameter.
+- `method="conical"` on `perforated_panel_layer()` and `slotted_panel_layer()`
+  models conical holes and wedge-shaped slots, with the exit diameter `d_exit`
+  or the exit width `w_exit`.
+- `causality_check()` compares the treatment depth with the minimum thickness
+  that causality allows for its absorption, `causality_limit()` solves the
+  same bound for a flat absorption target, and `check_passivity()` reports
+  whether the absorption stays between 0 and 1.
 
 ## Incidence Notes
 

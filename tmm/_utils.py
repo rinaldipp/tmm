@@ -1,5 +1,6 @@
 """
-Utility functions for air properties and for fractional-octave bands per IEC 61260-1 [1] and ANSI S1.11 [2].
+Utility functions for air properties, for fractional-octave bands per IEC 61260-1 [1] and ANSI S1.11 [2], and for the
+checks of physical inputs that the layer methods, terminations and helpers share.
 
 References
 ----------
@@ -10,12 +11,17 @@ References
 
 For further information check the function specific documentation.
 """
+import numbers
+
 import numpy as np
 import scipy
 
 # Nominal mid-band frequencies of octave and one-third-octave bands in IEC 61260-1:2014, Table E.1, as hundredths of
 # their decade, which clause E.1 extends to any decade by placing the decimal sign. Integers keep the labels exact.
 NOMINAL_HUNDREDTHS = np.array([100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000])
+
+# Characters of a value's repr that an input-check message echoes before it cuts the text.
+ECHO_LENGTH = 60
 
 class AirProperties:
     """
@@ -164,6 +170,294 @@ def find_nearest(array, value):
     value = array[idx]
 
     return value, idx
+
+
+def report_layer_keys(matrix):
+    """
+    Return the keys of a ``TMM.matrix`` in the order of the layer reports: the layer indices in ascending order, then
+    the other entries, such as a termination record, in their stored order.
+    """
+    return sorted(key for key in matrix if isinstance(key, int)) + [key for key in matrix if not isinstance(key, int)]
+
+
+def layer_label(matrix, key):
+    """
+    Return ``"Layer n"`` for the entry ``key`` of a ``TMM.matrix``, with ``n`` counted from 1 in the order of
+    ``report_layer_keys()``, the numbering of ``TMM.show_layers()``.
+    """
+    return f"Layer {report_layer_keys(matrix).index(key) + 1}"
+
+
+def plain_scalar(value):
+    """Return a NumPy scalar or 0-d array as the Python scalar it holds, and anything else unchanged."""
+    if isinstance(value, np.generic) or (isinstance(value, np.ndarray) and value.ndim == 0):
+        return value.item()
+    return value
+
+
+def _shape(value):
+    """Return ``np.shape(value)``, or ``(len(value),)`` for a nested sequence of unequal lengths."""
+    try:
+        return np.shape(value)
+    except ValueError:
+        return (len(value),)
+
+
+def describe_value(value):
+    """
+    Return the text with which an input check echoes ``value``: its ``repr``, NumPy scalars and 0-d arrays as the Python
+    number they hold, a sequence or an array as its kind and its length or shape without the values, a dictionary or a
+    set as its kind and size, and any other ``repr`` longer than ``ECHO_LENGTH`` characters cut, with its type named. A
+    value whose ``repr`` raises is named by its type alone.
+    """
+    value = plain_scalar(value)
+    if isinstance(value, (dict, set, frozenset)):
+        return f"a {type(value).__name__} of {len(value)} item{'' if len(value) == 1 else 's'}"
+    shape = () if isinstance(value, (str, bytes)) else _shape(value)
+    if shape:
+        kind = "an array" if isinstance(value, np.ndarray) else f"a {type(value).__name__}"
+        if len(shape) == 1:
+            return f"{kind} of {shape[0]} value{'' if shape[0] == 1 else 's'}"
+        return f"{kind} of shape {shape}"
+    try:
+        text = repr(value)
+    except Exception:  # noqa: BLE001  (an input check raises its own message, whatever the value's repr does)
+        return f"a {type(value).__name__}"
+    if len(text) > ECHO_LENGTH:
+        return f"a {type(value).__name__} starting {text[:ECHO_LENGTH]}..."
+    return text
+
+
+def holds_boolean(value):
+    """Return True when ``value`` is a boolean or a sequence holding one, which NumPy would read as 0 or 1."""
+    if isinstance(value, np.ndarray):
+        return value.dtype.kind == "b"
+    try:
+        return any(isinstance(item, (bool, np.bool_)) for item in np.ravel(np.asarray(value, dtype=object)))
+    except (TypeError, ValueError):
+        return False
+
+
+def number_texts(*values):
+    """
+    Return ``values`` as text with at least six significant digits, and with as many more as it takes for different
+    values to read differently, so that a message comparing them shows the difference. Where 16 digits do not suffice,
+    each value is written as its ``repr``, the shortest text that reads back as the same float.
+    """
+    values = [float(value) for value in values]
+    for digits in range(6, 17):
+        texts = [f"{value:.{digits}g}" for value in values]
+        if all((texts[i] == texts[j]) == (values[i] == values[j])
+               for i in range(len(values)) for j in range(i + 1, len(values))):
+            return texts
+    return [repr(value) for value in values]
+
+
+def real_number(value):
+    """
+    Return ``value`` as a float when it is one real number: a Python or NumPy real scalar, a ``fractions.Fraction`` or a
+    0-d real array. Return ``None`` for anything else, booleans, complex numbers and arrays of one element included.
+    """
+    if isinstance(value, np.ndarray):
+        if value.dtype.kind not in "iuf" or value.ndim != 0:
+            return None
+        return float(value)
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError, OverflowError):  # A Real type that does not convert, or a huge Fraction.
+        return None
+
+
+def real_array(value):
+    """
+    Return ``np.asarray(value)``, converting an array of objects that are all real numbers in the sense of
+    ``real_number``, as a list of ``fractions.Fraction`` gives, to an array of floats of the same shape.
+    """
+    array = np.asarray(value)
+    if array.dtype.kind == "O" and array.size:
+        items = [real_number(item) for item in array.ravel()]
+        if all(item is not None for item in items):
+            return np.array(items, dtype=float).reshape(array.shape)
+    return array
+
+
+def check_number(method, name, what, value, rule, accept, note=""):
+    """
+    Return ``value`` as a Python float when it is one real number for which ``accept`` holds, and raise a ``ValueError``
+    otherwise. The input checks of the package share one message form,
+    ``"{method}: {name}, {what}, must be {rule}, not {value}."``, followed by ``note``. ``what`` names the quantity with
+    its unit, and the value is echoed by ``describe_value``. For a sequence or an array, ``rule`` reads "a single finite
+    number" in place of "a finite number".
+    """
+    number = real_number(value)
+    if number is not None and accept(number):
+        return number
+    if not isinstance(value, (str, bytes, dict, set, frozenset)) and _shape(value):
+        rule = rule.replace("a finite number", "a single finite number", 1)
+    raise ValueError(f"{method}: {name}, {what}, must be {rule}, not {describe_value(value)}.{note}")
+
+
+def check_positive(method, name, what, value, note=""):
+    """Check that ``value`` is one finite number above 0, as ``check_number`` does."""
+    return check_number(method, name, what, value, "a finite number above 0", lambda x: np.isfinite(x) and x > 0,
+                        note)
+
+
+def check_at_most(method, name, what, value, bound_name, bound_what, bound, unit, note=""):
+    """
+    Raise a ``ValueError`` in the shared form when the checked number ``value`` is above ``bound``, the value of the
+    parameter ``bound_name``, which ``bound_what`` describes. Both are printed in ``unit`` with as many digits as tell
+    them apart.
+    """
+    if value <= bound:
+        return value
+    shown, limit = number_texts(value, bound)
+    raise ValueError(f"{method}: {name}, {what}, must be at most {bound_what} {bound_name} = {limit} {unit}, not "
+                     f"{shown}.{note}")
+
+
+def check_flag(method, name, value):
+    """Return ``value`` as a bool when it is ``True`` or ``False``, a NumPy boolean included, and raise otherwise."""
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    raise ValueError(f"{method}: {name} must be True or False, not {describe_value(value)}.")
+
+
+def check_choice(method, name, what, value, choices):
+    """
+    Return ``value`` when it is one of the names ``choices``, matched exactly, and raise a ``ValueError`` that lists
+    them otherwise, also for a name in another case and for a value that is not text.
+    """
+    if isinstance(value, str) and value in choices:
+        return value
+    listed = ", ".join(repr(choice) for choice in choices)
+    raise ValueError(f"{method}: {name}, {what}, must be one of {listed}, not {describe_value(value)}.")
+
+
+def check_index(method, value, name="layer", what="the position of the layer in the stack"):
+    """
+    Return ``None``, or a whole number given as a Python or NumPy integer or as a float with an integer value as an int,
+    and raise otherwise.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (numbers.Integral, np.integer)) and not isinstance(value, (bool, np.bool_)):
+        return int(value)
+    if isinstance(value, (float, np.floating)) and float(value).is_integer():
+        return int(value)
+    raise ValueError(f"{method}: {name}, {what}, must be None or an integer, not {describe_value(value)}.")
+
+
+def check_sample_size(method, value, limit):
+    """
+    Return the sides ``(a, b)`` [m] of ``sample_size``: one finite number above 0 for a square, or a pair of them, each
+    at most ``limit``. Anything else, booleans, text, complex numbers and nested sequences included, raises a
+    ``ValueError`` in the shared form.
+    """
+    what = "the sample side lengths [m]"
+    rule = "a finite number above 0 or a pair of them"
+    if isinstance(value, np.ma.MaskedArray):
+        sides = [None]
+    elif isinstance(value, (str, bytes, dict, set, frozenset)) or not _shape(value):
+        sides = [real_number(value)] * 2
+    elif len(_shape(value)) == 1 and _shape(value)[0] in (1, 2):
+        sides = [real_number(side) for side in value]
+        sides = sides * 2 if len(sides) == 1 else sides
+    else:
+        sides = [None]
+    bad = [side is None or not np.isfinite(side) or side <= 0 for side in sides]
+    if any(bad):
+        named = ""
+        if not isinstance(value, np.ma.MaskedArray) and _shape(value) == (2,):
+            position = bad.index(True)
+            named = f" with {describe_value(list(value)[position])} as its {('first', 'second')[position]} side"
+        raise ValueError(f"{method}: sample_size, {what}, must be {rule}, not {describe_value(value)}{named}.")
+    if max(sides) > limit:
+        texts = number_texts(*sides, limit)[:2]  # Digits enough to tell each side from the limit.
+        shown = ", ".join(texts) if _shape(value) else texts[0]
+        raise ValueError(f"{method}: sample_size, {what}, must have no side above SAMPLE_SIZE_LIMIT = {limit:g} m, not "
+                         f"{'(' + shown + ')' if _shape(value) else shown}. sample_size is in metres, and a side that "
+                         f"large is likely one in millimetres.")
+    return tuple(sides)
+
+
+def check_non_negative(method, name, what, value):
+    """Check that ``value`` is one finite number of at least 0, for a quantity whose 0 means none."""
+    return check_number(method, name, what, value, "a finite number of at least 0",
+                        lambda x: np.isfinite(x) and x >= 0)
+
+
+def check_fraction(method, name, what, value):
+    """Check that ``value`` is one finite number above 0 and at most 1, as a porosity or an open area is."""
+    return check_number(method, name, what, value, "a finite number above 0 and at most 1", lambda x: 0 < x <= 1)
+
+
+def check_tortuosity(method, name, what, value):
+    """Check that ``value`` is one finite number of at least 1, as a tortuosity is."""
+    return check_number(method, name, what, value, "a finite number of at least 1", lambda x: 1 <= x < np.inf)
+
+
+def check_interval(method, name, what, value, low, high, closed=(True, True)):
+    """
+    Check that ``value`` is one finite number between ``low`` and ``high``, each bound included where ``closed`` says
+    so.
+    """
+    if all(closed):
+        rule = f"a finite number from {low:g} to {high:g}"
+    else:
+        rule = (f"a finite number {'of at least' if closed[0] else 'above'} {low:g} and "
+                f"{'at most' if closed[1] else 'below'} {high:g}")
+    return check_number(method, name, what, value, rule,
+                        lambda x: (low <= x if closed[0] else low < x) and (x <= high if closed[1] else x < high))
+
+
+def check_thickness(method, value, name="t", what="the thickness [mm]"):
+    """Check that a layer thickness is one finite number above 0; a zero thickness is told to leave the layer out."""
+    note = " Leave the layer out instead of giving it zero thickness." if real_number(value) == 0 else ""
+    return check_positive(method, name, what, value, note)
+
+
+def check_plate_density(method, value, what="the plate density [kg/m³]"):
+    """Check that a plate density is ``None``, a rigid plate, or one finite number above 0."""
+    if value is None:
+        return value
+    note = " Pass rho=None for a rigid plate." if real_number(value) == 0 else ""
+    return check_number(method, "rho", what, value, "None (a rigid plate) or a finite number above 0",
+                        lambda x: np.isfinite(x) and x > 0, note)
+
+
+def check_values(method, name, what, value, rule, accept):
+    """
+    Check an input that is an array by definition: every element a finite real number for which ``accept`` holds,
+    evaluated on the whole array.
+    """
+    try:
+        array = np.asarray(value)
+        valid = (array.dtype.kind in "iuf" and array.size > 0 and bool(np.all(np.isfinite(array)))
+                 and bool(np.all(accept(array))))
+    except (TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise ValueError(f"{method}: {name}, {what}, must be {rule}, not {describe_value(value)}.")
+    return value
+
+
+def check_impedance(method, name, what, value):
+    """
+    Return an impedance given as one number, real or complex (a Python or NumPy scalar or a 0-d array), as a Python
+    float or complex, and raise a ``ValueError`` for a NaN, a negative real part, an array or a list of any length, and
+    anything that is not a number. Zero (pressure release) and positive infinity (rigid) pass.
+    """
+    number = plain_scalar(value)
+    if isinstance(number, (numbers.Real, numbers.Complex)) and not isinstance(number, bool):
+        number = complex(number) if isinstance(number, complex) else real_number(number)
+        if number is not None and not np.isnan(number) and number.real >= 0:
+            return number
+    rule = "a single number, real or complex," if _shape(value) else "a number"
+    raise ValueError(f"{method}: {name}, {what}, must be {rule} without NaN and with a real part of at least 0, not "
+                     f"{describe_value(value)}.")
 
 
 def filter_values(freq, values, n_oct=1):

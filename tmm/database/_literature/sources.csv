@@ -1,0 +1,49 @@
+source_id,role,cited_in,citation,note
+COX2017,book,,"T. J. Cox and P. D'Antonio, Acoustic Absorbers and Diffusers: Theory, Design and Application, 3rd ed., CRC Press, Boca Raton, 2017.",
+VOR2008,book,,"M. Vorländer, Auralization: Fundamentals of Acoustics, Modelling, Simulation, Algorithms and Acoustic Virtual Reality, Springer, Berlin, 2008.",
+BER2004,book,,"L. L. Beranek, Concert Halls and Opera Houses: Music, Acoustics, and Architecture, 2nd ed., Springer, New York, 2004.",
+BER2006,paper,,"L. L. Beranek, ""Analysis of Sabine and Eyring equations and their application to concert hall audience and chair absorption"", Journal of the Acoustical Society of America, vol. 120, no. 3, pp. 1399-1410, 2006.",
+KUT2017,book,,"H. Kuttruff, Room Acoustics, 6th ed., CRC Press, Boca Raton, 2017.",
+COX2017-A-1,primary_as_cited,COX2017,"L. L. Beranek, Acoustics, McGraw-Hill, New York (1954).","Appendix A reference 1, p. 480."
+COX2017-A-2,primary_as_cited,COX2017,"C. M. Harris (Ed.), Handbook of Noise Control, 2nd edn, McGraw-Hill, New York (1991).","Appendix A reference 2, p. 480."
+COX2017-A-3,primary_as_cited,COX2017,"D. Templeton (Ed.), Acoustics in the Built Environment, 2nd edn, Architectural Press, Oxford, UK (1997).","Appendix A reference 3, p. 480."
+COX2017-A-4,primary_as_cited,COX2017,"V. S. Mankovsky, Acoustics of Studio and Auditoria, Focal Press, New York (1971).","Appendix A reference 4, p. 480."
+COX2017-A-5,primary_as_cited,COX2017,"F. Alton Everest, Master Handbook of Acoustics, 4th edn, McGraw-Hill, New York (2001).","Appendix A reference 5, p. 480."
+COX2017-A-6,primary_as_cited,COX2017,"A. Fry (Ed.), Noise Control in Building Services, Pergamon Press, Oxford, UK (1987).","Appendix A reference 6, p. 480."
+COX2017-A-7,primary_as_cited,COX2017,"P. H. Parkin, H. R. Humphreys, and J. R. Cowell, Acoustics, Noise and Buildings, Faber and Faber, London (1979).","Appendix A reference 7, p. 480."
+COX2017-A-8,primary_as_cited,COX2017,"J. Kristensen, ""Sound Absorption Coefficients - Measurement, evaluation, application"", Note 45, Statens Byggeforskningsinstitut, Hørsholm (1984) (in Danish).","Appendix A reference 8, p. 480."
+COX2017-A-9,primary_as_cited,COX2017,"C. Lynge, ODEON Room Acoustics Program, User Manual, DTU, Denmark (2001).","Appendix A reference 9, p. 480."
+COX2017-A-10,primary_as_cited,COX2017,"L. L. Beranek and T. Hidaka, ""Sound absorption in concert halls by seats, occupied and unoccupied, and by the hall's interior surfaces"", J. Acoust. Soc. Am., 104(6), 3169-77 (1998).","Appendix A reference 10, p. 480."
+COX2017-A-11,primary_as_cited,COX2017,"Physikalisch-Technische Bundesanstalt, http://www.ptb.de/en/index.html, accessed 2003.","Appendix A reference 11, p. 480."
+COX2017-A-12,primary_as_cited,COX2017,"J. Petersen, ""Rumakustik"", SBI-anvisning 137, Statens Byggeforskningsinstitut, Hørsholm (1983).","Appendix A reference 12, p. 480."
+COX2017-A-13,primary_as_cited,COX2017,"R. W. Young, ""Sabine reverberation and sound power calculations"", J. Acoust. Soc. Am., 31, 912-21 (1959).","Appendix A reference 13, p. 480."
+COX2017-A-14,primary_as_cited,COX2017,"H. W. Bobran, Handbuch der bauphysik, Verlag Ulstein, Berlin (1973).","Appendix A reference 14, p. 480."
+COX2017-A-15,primary_as_cited,COX2017,"L. L. Beranek, ""Audience and chair absorption in large halls. II"", J. Acoust. Soc. Am., 45, 13-9 (1969).","Appendix A reference 15, p. 480."
+COX2017-A-16,primary_as_cited,COX2017,"W. J. Davies, R. J. Orlowski, and Y. W. Lam, ""Measuring auditorium seat absorption"", J. Acoust. Soc. Am., 96, 879-88 (1994).","Appendix A reference 16, p. 480."
+COX2017-A-17,primary_as_cited,COX2017,"D. A. Bies and C. H. Hansen, Engineering Noise Control: Theory and Practice, 2nd edn, E&FN Spon, London (1996).","Appendix A reference 17, p. 480."
+COX2017-A-18,primary_as_cited,COX2017,"N. W. Adelman-Larsen, E. R. Thompson, and A. C. Gade, ""Suitable reverberation times for halls for rock and pop music"", J. Acoust. Soc. Am., 127(1), 247-55 (2010).","Appendix A reference 18, p. 480."
+COX2017-A-19,primary_as_cited,COX2017,"V. O. Knudsen and C. M. Harris, Acoustical Designing in Architecture, John Wiley, New York (1953).","Appendix A reference 19, p. 480."
+COX2017-A-21,primary_as_cited,COX2017,"ISO/TR 11690-3, ""Acoustics - Recommended practice for design of low-noise workplaces containing machinery - Part 3: Sound propagation and noise predictions in workrooms"" (1997).","Appendix A reference 21, p. 480."
+COX2017-A-22,primary_as_cited,COX2017,"D. Davis and C. Davis, Sound System Engineering, Focal Press, Indianapolis, IN (1997).","Appendix A reference 22, p. 480."
+COX2017-A-24,primary_as_cited,COX2017,"W. Fasold and H. Winkler, Bauphysikalische entwurfslehre, band 4: Bauakustik, VEB Verlag für Bauwesen, Berlin (1976).","Appendix A reference 24, p. 480."
+COX2017-A-25,primary_as_cited,COX2017,"L. E. Kinsler, A. R. Frey, A. B. Coppens, and J. V. Sanders, Fundamentals of acoustics, 4th edn, John Wiley & Sons (2000).","Appendix A reference 25, p. 480."
+COX2017-A-27,primary_as_cited,COX2017,"Z. Azkorra, G. Pérez, J. Coma, L. F. Cabeza, S. Bures, J. E. Álvaro, A. Erkoreka, and M. Urrestarazu, ""Evaluation of green walls as a passive acoustic insulation system for buildings"", Appl. Acoust., 89, 46-56 (2015).","Appendix A reference 27, p. 480."
+COX2017-A-28,primary_as_cited,COX2017,"N. H. Wong, A. Y. K. Tan, P. Y. Tan, K. Chiang, and N. C. Wong, ""Acoustics evaluation of vertical greenery systems for building walls"", Build. Environ., 45(2), 411-20 (2010).","Appendix A reference 28, p. 480."
+COX2017-A-29,primary_as_cited,COX2017,"H. S. Yang, J. Kang, and C. Cheal, ""Random-incidence absorption and scattering coefficients of vegetation"", Acta Acust. Acust., 99(3), 379-88 (2013).","Appendix A reference 29, p. 480."
+COX2017-D-1,primary_as_cited,COX2017,"M. Vorländer, J. J. Embrechts, L. De Geetere, G. Vermeir, and M. Gomes, ""Case studies in measurement of random incidence scattering coefficients"", Acta Acust. Acust., 90, 858-67 (2004).","Appendix D reference 1, p. 502."
+COX2017-D-2,primary_as_cited,COX2017,"T. Sakuma and H. Lee, ""Validation of the sample rotation scheme in the measurement of random-incidence scattering coefficients"", Acta Acust. Acust., 99(5), 737-50 (2013).","Appendix D reference 2, p. 502."
+COX2017-D-3,primary_as_cited,COX2017,"Y. J. Choi, ""Effects of periodic type diffusers on classroom acoustics"", Appl. Acoust., 74(5), 694-707 (2013).","Appendix D reference 3, p. 502."
+COX2017-D-4,primary_as_cited,COX2017,"Y. H. Kim, H. S. Jang, and J. Y. Jeon, ""Characterizing diffusive surfaces using scattering and diffusion coefficients"", Appl. Acoust., 72(11), 899-905 (2011).","Appendix D reference 4, p. 502."
+COX2017-D-5,primary_as_cited,COX2017,"L. Shtrepi, A. Astolfi, G. D'Antonio, G. Vannelli, G. Barbato, S. Mauro, and A. Prato, ""Accuracy of the random-incidence scattering coefficient measurement"", Appl. Acoust., 106, 23-35 (2016).","Appendix D reference 5, p. 502."
+COX2017-D-6,primary_as_cited,COX2017,"A. F. Sharma and D. T. Bradley, ""Assessing the effectiveness of geometrically modified pyramidal diffusers: Scattering coefficient measurements"", J. Acoust. Soc. Am., 134(5), 4095 (2013).","Appendix D reference 6, p. 502."
+COX2017-D-7,primary_as_cited,COX2017,"H. S. Yang, J. Kang, and C. Cheal, ""Random-incidence absorption and scattering coefficients of vegetation"", Acta Acust. Acust., 99(3), 379-88 (2013).","Appendix D reference 7, p. 502."
+BH1998,primary_as_cited,BER2004;KUT2017,"L. L. Beranek and T. Hidaka, ""Sound absorption in concert halls by seats, occupied and unoccupied, and by the hall's interior surfaces"", J. Acoust. Soc. Am., 104(6), 3169-77 (1998).","Beranek (2004), p. 638, names it as the reference of Table A3.6, and Kuttruff (2017) as the source of Tables 6.4 and 6.5."
+KK1965,primary_as_cited,KUT2017,"U. Kath and W. Kuhl, ""Measurements on sound absorption of upholstered chairs with and without persons"" (in German), Acustica 15, 127 (1965).","As printed in Kuttruff (2017), Table 6.2."
+CBJ2015,primary_as_cited,KUT2017,"Choi YJ, Bradley JS, Yeong DU. Acoust Soc Amer 2015; 137:105.","As printed in Kuttruff (2017), Table 6.6; the text, p. 150, names the authors Choi, Bradley and Jeong."
+VM2000,primary_as_cited,VOR2008,"M. Vorländer and E. Mommertz, ""Definition and measurement of random-incidence scattering coefficients"", Appl. Ac. 60, 187 (2000).",As printed in the Vorländer (2008) reference list.
+JEON2003,primary_as_cited,VOR2008,"J. Y. Jeon, L. Zhu, K. Yoo, ""Miral Concert Hall: 'Ceramic Palace' for sound scattering"", Proc. Internoise Jeju, 545 (2003).",As printed in the Vorländer (2008) reference list.
+JEON2004,primary_as_cited,VOR2008,"J. Y. Jeon, S. C. Lee, M. Vorländer, ""Development of scattering surfaces for concert halls"", Appl. Ac. 65, 341 (2004).",As printed in the Vorländer (2008) reference list.
+EMB2004,primary_as_cited,VOR2008,"J. J. Embrechts, L. De Geetere, G. Vermeir, M. Vorländer, T. Sakuma, ""Calculation of the random-incidence scattering coefficients of a sine-shaped surface"", Acta Acustica united with Acustica 92, 593 (2004).",As printed in the Vorländer (2008) reference list.
+BORK2005A,primary_as_cited,VOR2008,"I. Bork, ""Report on the 3rd round robin on room acoustical computer simulation, Part I: Measurements"", Acta Acustica united with Acustica 91, 740 (2005).",As printed in the Vorländer (2008) reference list.
+FAR2005,primary_as_cited,VOR2008,"A. Farnetani, ""Investigation on the acoustics of ancient theatres by means of modern technologies"", PhD thesis, University of Ferrara, Italy (2005).",As printed in the Vorländer (2008) reference list.
+PTB,primary_as_cited,VOR2008,"Database of absorption coefficients by I. Bork, Physikalisch-Technische Bundesanstalt (round robin project), named in the Vorländer (2008) Annex introduction, p. 303, with footnote URL http://www.ptb.de/en/org/1/17/173/roundrobin.htm.",
